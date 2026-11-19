@@ -118,6 +118,17 @@ def _selftest(wav_path: Path) -> int:
 
         steps["calibration_offset_db"] = round(
             Calibration(name="自检", sensitivity_mv_pa=10.0).offset_db(), 3)
+
+        # 界面双语：确认英文词表进了包，查表能命中，且切回中文后回落正常
+        from core.i18n import LANG_EN, LANG_ZH, set_language, tr
+        from core.i18n_en import EN
+
+        set_language(LANG_EN)
+        steps["i18n_en_entries"] = len(EN)
+        steps["i18n_probe_en"] = tr("打开 WAV")
+        steps["i18n_ok"] = tr("打开 WAV") == "Open WAV"
+        set_language(LANG_ZH)
+        steps["i18n_ok"] = steps["i18n_ok"] and tr("打开 WAV") == "打开 WAV"
         report["ok"] = True
     except Exception:
         report["error"] = traceback.format_exc()

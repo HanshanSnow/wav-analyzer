@@ -2,7 +2,7 @@
 
 [English](README.md) · **简体中文**
 
-![version](https://img.shields.io/badge/version-1.5-blue)
+![version](https://img.shields.io/badge/version-1.6-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey)
 ![python](https://img.shields.io/badge/python-3.11%2B-3776AB)
 ![license](https://img.shields.io/badge/license-MIT-green)
@@ -39,7 +39,7 @@
 
 ### 方式 A：直接用打包好的程序（推荐）
 
-到 [Releases](../../releases) 下载 `WAV_Analyzer_v1.5_win64.zip`，解压后双击 `WAV Analyzer.exe`。无需安装 Python 或任何依赖。
+到 [Releases](../../releases) 下载 `WAV_Analyzer_v1.6_win64.zip`，解压后双击 `WAV Analyzer.exe`。无需安装 Python 或任何依赖。
 
 1. 建议单独建一个文件夹存放，例如 `WAV Analyzer`。
 2. 首次启动会稍慢（单文件版需把内置组件解压到临时目录），属正常现象。

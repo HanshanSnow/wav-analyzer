@@ -2,7 +2,7 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-![version](https://img.shields.io/badge/version-1.5-blue)
+![version](https://img.shields.io/badge/version-1.6-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey)
 ![python](https://img.shields.io/badge/python-3.11%2B-3776AB)
 ![license](https://img.shields.io/badge/license-MIT-green)
@@ -39,7 +39,7 @@ Nothing in the program is tied to a particular rig. If it is a WAV file with a s
 
 ### Option A — prebuilt binary (recommended)
 
-Download `WAV_Analyzer_v1.5_win64.zip` from [Releases](../../releases), unpack it, and double-click `WAV Analyzer.exe`. Python is not required.
+Download `WAV_Analyzer_v1.6_win64.zip` from [Releases](../../releases), unpack it, and double-click `WAV Analyzer.exe`. Python is not required.
 
 1. Unpack into its own folder, e.g. `WAV Analyzer`.
 2. The first launch is slower than later ones — the one-file build unpacks its bundled components into a temp directory. That is expected.
