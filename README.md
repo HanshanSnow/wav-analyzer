@@ -6,7 +6,7 @@
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey)
 ![python](https://img.shields.io/badge/python-3.11%2B-3776AB)
 ![license](https://img.shields.io/badge/license-MIT-green)
-![tests](https://img.shields.io/badge/tests-141%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-150%20passing-brightgreen)
 
 A Windows desktop application for turning acoustic measurement recordings into numbers you can defend. Open a WAV, inspect the waveform, spectrum and spectrogram, strip out transient hits, fit an envelope, compute interval statistics, and export fixed-width TXT, CSV, 600 dpi figures or a standalone HTML report — or push hundreds of files through a reusable batch script. An optional LLM assistant can drive the same tools in natural language, and every change it proposes still needs your confirmation.
 
@@ -94,6 +94,7 @@ On Windows you can also double-click `run_app.bat`; it prefers `py -3` and falls
 | AI assistant | DeepSeek / Moonshot / OpenAI presets or any OpenAI-compatible endpoint; whitelisted tool calls; user and assistant turns in distinct coloured bubbles; answers rendered as Markdown; repairs always need confirmation |
 | Export | Processed WAV, fixed-width analysis TXT, image PNG (paper or screen layout), statistics CSV, standalone HTML report |
 | Batch processing | Step script (repair / crop / envelope / statistics / five export types) applied to a multi-file selection, executed in the background behind a dimmed overlay with import and processing progress, cancellable |
+| Interface language | Chinese or English, switchable at the bottom of the sidebar; the program restarts itself to apply the change. Chinese is the default. Exported reports keep Chinese section headings — see section 7. |
 
 ---
 
@@ -182,6 +183,7 @@ Profiles are named and stored, and the currently selected one applies to batch r
    - **Waveform display, image export and spectrogram** are decimated for display only. Peaks and readouts are unchanged, and decimated data never enters any calculation.
    - **Cursor envelope readout** uses a centre-symmetric window, so there is no systematic bias on steady-state signals.
    - **Undo stack** keeps at most 4 levels, about 1.2 GB in total; older entries are dropped first.
+8. **Language scope.** The interface switches fully between Chinese and English. Exported artefacts — the fixed-width TXT report, the CSV key names and the HTML report body — are generated in Chinese regardless of the interface language, because their layout is tuned to fixed-width Chinese columns. Keep one language for a given experiment so a report set stays self-consistent.
 
 ---
 
@@ -190,7 +192,7 @@ Profiles are named and stored, and the currently selected one applies to batch r
 ```bash
 pip install -r requirements.txt
 
-pytest -q                     # 141 tests
+pytest -q                     # 150 tests
 pytest tests/test_batch.py    # batch pipeline only
 ```
 
@@ -248,6 +250,8 @@ core/                 pure computation, no Qt dependency
   editing.py            cropping, envelope fitting
   statistics.py         21 interval statistics
   calibration.py        dBFS to dB SPL conversion (sensitivity / gain / two-point)
+  i18n.py               translation layer (Chinese source strings as keys)
+  i18n_en.py            English string table
   figure_export.py      image export (screen and paper layouts)
   txt_export.py         fixed-width TXT reports
   report.py             HTML reports
@@ -265,7 +269,7 @@ ai/                   AI assistant
   client.py             OpenAI-compatible client
   assistant.py          prompt and tool loop
   tools.py              whitelisted tools
-tests/                automated tests (141)
+tests/                automated tests (150)
 docs/                 manual (LaTeX source + PDF) and screenshot scripts
 demo/                 synthetic demo recording and screenshots; real measurement data is never committed
 ```
@@ -295,8 +299,9 @@ A longer error table lives in the manual's troubleshooting chapter.
 - Windows 10 / 11, 64-bit
 - 8 GB RAM recommended, more if you routinely open tens of millions of samples
 - No network needed for any manual analysis feature; only the AI assistant requires a connection
+- Chinese (default) or English interface — switch in the sidebar, the app restarts itself
 - Playback needs a working output device; everything else works without one
-- The Chinese UI relies on Microsoft YaHei, shipped with Windows 10/11
+- Chinese text relies on Microsoft YaHei (shipped with Windows 10/11); the English UI uses the system default font
 
 The program does not touch the registry or write to system directories. Settings live in the current user's application data directory; the API key lives in the Windows Credential Manager. Source WAVs are opened read-only.
 

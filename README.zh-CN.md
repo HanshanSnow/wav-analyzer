@@ -6,7 +6,7 @@
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey)
 ![python](https://img.shields.io/badge/python-3.11%2B-3776AB)
 ![license](https://img.shields.io/badge/license-MIT-green)
-![tests](https://img.shields.io/badge/tests-141%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-150%20passing-brightgreen)
 
 处理声学测量 WAV 数据的 Windows 桌面程序：读入录音，看波形、频谱与时频图，检测并修复瞬时冲击，拟合包络，算区间统计，导出定宽 TXT、统计 CSV、600 dpi 论文插图和独立 HTML 报告；上百个录音可以配成一条步骤脚本批量跑完。可选接一个大模型助手，用自然语言驱动上面这些工具，但所有改动仍需你确认。
 
@@ -94,6 +94,7 @@ Windows 上也可以直接双击 `run_app.bat`（脚本会优先找 `py -3`，�
 | AI 助手 | DeepSeek / Moonshot / OpenAI 厂商预设或任意 OpenAI 兼容接口，白名单工具调用；提问与回答用不同底色气泡区分，回答按 Markdown 渲染；去噪需人工确认 |
 | 导出 | 处理后 WAV、分析数据 TXT（定宽对齐，可直接进 Excel / Origin / pandas）、图像 PNG（论文版式或屏幕版式）、统计 CSV、独立 HTML 数据处理报告 |
 | 批量处理 | 步骤脚本（去噪／裁剪／包络／统计／五种导出）+ 多选文件，后台逐个执行，虚化遮罩显示导入与处理进度，可中途取消 |
+| 界面语言 | 中文或 English，在左侧栏最底部切换；切换后程序自动重启生效。默认中文。导出报告的正文仍为中文，见第七节 |
 
 ---
 
@@ -182,6 +183,7 @@ L_SPL = L_dBFS + K
    - **波形显示 / 图像导出 / 时频图**：仅做可视化抽稀，峰谷与读数不变，不参与任何数值计算。
    - **游标包络读数**：使用中心对称窗口消除边缘误差，对稳态信号无系统偏差。
    - **撤销栈**：最多保留 4 级、合计约 1.2 GB，超出后最早的记录自动丢弃。
+8. **语言范围**：界面可完整切换中英文；但导出的定宽 TXT 报告、CSV 键名与 HTML 报告正文固定为中文，因为排版按定宽中文列调过。同一次实验建议用同一语言导出，避免一套报告里中英混排。
 
 ---
 
@@ -190,7 +192,7 @@ L_SPL = L_dBFS + K
 ```bash
 pip install -r requirements.txt
 
-pytest -q                    # 全量 141 项
+pytest -q                    # 全量 150 项
 pytest tests/test_batch.py   # 只跑批量流水线
 ```
 
@@ -248,6 +250,8 @@ core/                 纯计算层，不依赖 Qt
   editing.py            裁剪、包络拟合
   statistics.py         21 项区间统计
   calibration.py        声压级换算（灵敏度 / 前置增益 / 两点标定）
+  i18n.py               翻译层（以中文原文为键）
+  i18n_en.py            英文词条表
   figure_export.py      图像导出（屏幕版式 / 论文版式）
   txt_export.py         定宽 TXT 报告
   report.py             HTML 报告
@@ -265,7 +269,7 @@ ai/                   AI 助手
   client.py             OpenAI 兼容接口客户端
   assistant.py          提示词与工具循环
   tools.py              白名单工具
-tests/                自动化测试（141 项）
+tests/                自动化测试（150 项）
 docs/                 使用手册（LaTeX 源 + PDF）与配图脚本
 demo/                 合成演示录音与截图；真实测量数据不进仓库
 ```
@@ -279,6 +283,7 @@ demo/                 合成演示录音与截图；真实测量数据不进仓�
 - 操作系统：Windows 10 / 11（64 位）
 - 内存：建议 8 GB 以上（处理数千万采样点的长录音时更需留意）
 - 无需联网即可使用全部手动分析功能；仅 AI 助手需要网络连接
+- 界面语言：中文（默认）或 English，切换后程序自动重启生效
 - 播放在有可用声卡的机器上工作，无输出设备时其余功能不受影响
 - 中文界面依赖系统自带的微软雅黑字体（Windows 10/11 默认具备）
 
