@@ -70,7 +70,7 @@ def main() -> None:
 
     dialog = BatchDialog(window, default_dir=str(ROOT / "demo"))
     dialog.resize(1010, 730)
-    # 截图要确定性：清掉 QSettings 里上次恢复的脚本，画一条本实验真会用的流水线
+    # 截图要确定性：清掉 QSettings 里上次恢复的脚本，画一条常见测量真会用的流水线
     dialog.steps = [new_step("denoise"), new_step("stats"),
                     new_step("export_csv"), new_step("export_txt")]
     dialog.steps[1]["params"].update(
@@ -84,7 +84,7 @@ def main() -> None:
     dialog.output_dir.setText(r"D:\data\batch_out")
     dialog._refresh_list()
     dialog.step_list.setCurrentRow(3)
-    # 列表默认 320 宽，放不下本实验的步骤摘要；配图里把分割条拉开
+    # 列表默认 320 宽，放不下较长的步骤摘要；配图里把分割条拉开
     splitter = dialog.findChildren(QSplitter)[0]
     splitter.setSizes([520, 660])
     dialog._refresh_hint()
