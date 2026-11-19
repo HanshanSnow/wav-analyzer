@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from core.i18n import tf, tr
 import re
 import time
 from dataclasses import dataclass, field
@@ -75,134 +76,134 @@ class StepSpec:
 
 
 _REGION = (
-    Param("region", "统计区间", "choice", "all",
-          (("all", "全文件"), ("trim", "去掉首尾"), ("fixed", "固定区间")),
-          tooltip="去掉首尾用于跳过起振与收尾的瞬态"),
-    Param("head", "去掉开头", "float", 0.2, minimum=0.0, maximum=600.0,
+    Param("region", tr("统计区间"), "choice", "all",
+          (("all", tr("全文件")), ("trim", tr("去掉首尾")), ("fixed", tr("固定区间"))),
+          tooltip=tr("去掉首尾用于跳过起振与收尾的瞬态")),
+    Param("head", tr("去掉开头"), "float", 0.2, minimum=0.0, maximum=600.0,
           decimals=3, step=0.1, suffix=" s"),
-    Param("tail", "去掉结尾", "float", 0.2, minimum=0.0, maximum=600.0,
+    Param("tail", tr("去掉结尾"), "float", 0.2, minimum=0.0, maximum=600.0,
           decimals=3, step=0.1, suffix=" s"),
-    Param("start", "起点", "float", 0.0, minimum=0.0, maximum=1.0e7,
+    Param("start", tr("起点"), "float", 0.0, minimum=0.0, maximum=1.0e7,
           decimals=3, step=0.1, suffix=" s"),
-    Param("end", "终点", "float", 0.0, minimum=0.0, maximum=1.0e7,
-          decimals=3, step=0.1, suffix=" s（0 表示到文件末尾）"),
+    Param("end", tr("终点"), "float", 0.0, minimum=0.0, maximum=1.0e7,
+          decimals=3, step=0.1, suffix=tr(" s（0 表示到文件末尾）")),
 )
 
 _FUNDAMENTAL = (
-    Param("fundamental", "已知激励频率", "choice", "auto",
-          (("auto", "自动估计（取最强峰）"),
-           ("fixed", "固定值（所有文件相同）"),
-           ("name", "文件名里的频率（如 1000Hz）")),
-          tooltip="从文件名解析：识别 1000Hz、2kHz 这类片段，适合按频率命名的一批录音"),
-    Param("fundamental_hz", "固定频率值", "float", 1000.0, minimum=0.0,
+    Param("fundamental", tr("已知激励频率"), "choice", "auto",
+          (("auto", tr("自动估计（取最强峰）")),
+           ("fixed", tr("固定值（所有文件相同）")),
+           ("name", tr("文件名里的频率（如 1000Hz）"))),
+          tooltip=tr("从文件名解析：识别 1000Hz、2kHz 这类片段，适合按频率命名的一批录音")),
+    Param("fundamental_hz", tr("固定频率值"), "float", 1000.0, minimum=0.0,
           maximum=1.0e6, decimals=2, step=10.0, suffix=" Hz"),
 )
 
 STEP_SPECS: tuple[StepSpec, ...] = (
     StepSpec(
-        "denoise", "冲击去噪",
-        "检测超出稳健阈值的短脉冲并三次样条修补；无法修补的超长区间标记为无效点。",
+        "denoise", tr("冲击去噪"),
+        tr("检测超出稳健阈值的短脉冲并三次样条修补；无法修补的超长区间标记为无效点。"),
         (
-            Param("threshold", "稳健阈值", "float", 8.0, minimum=0.5, maximum=100.0,
-                  decimals=2, step=0.5, tooltip="按稳健标准差倍数判定冲击，越小越敏感"),
-            Param("max_repair_ms", "最长修复", "float", 3.0, minimum=0.1, maximum=100.0,
+            Param("threshold", tr("稳健阈值"), "float", 8.0, minimum=0.5, maximum=100.0,
+                  decimals=2, step=0.5, tooltip=tr("按稳健标准差倍数判定冲击，越小越敏感")),
+            Param("max_repair_ms", tr("最长修复"), "float", 3.0, minimum=0.1, maximum=100.0,
                   decimals=2, step=0.1, suffix=" ms"),
-            Param("scope", "处理范围", "choice", "all",
-                  (("all", "全部声道"), ("first", "仅第 1 声道"))),
+            Param("scope", tr("处理范围"), "choice", "all",
+                  (("all", tr("全部声道")), ("first", tr("仅第 1 声道")))),
         ),
     ),
     StepSpec(
-        "trim", "裁剪到区间",
-        "只保留指定时间区间，其后的步骤都基于裁剪后的数据。",
+        "trim", tr("裁剪到区间"),
+        tr("只保留指定时间区间，其后的步骤都基于裁剪后的数据。"),
         (
-            Param("start", "起点", "float", 0.0, minimum=0.0, maximum=1.0e7,
+            Param("start", tr("起点"), "float", 0.0, minimum=0.0, maximum=1.0e7,
                   decimals=3, step=0.1, suffix=" s"),
-            Param("end", "终点", "float", 0.0, minimum=0.0, maximum=1.0e7,
-                  decimals=3, step=0.1, suffix=" s（0 表示到文件末尾）"),
+            Param("end", tr("终点"), "float", 0.0, minimum=0.0, maximum=1.0e7,
+                  decimals=3, step=0.1, suffix=tr(" s（0 表示到文件末尾）")),
         ),
     ),
     StepSpec(
-        "envelope", "包络拟合",
-        "对指定区间求 Hilbert 包络并拟合（auto 会按残差自动选择常数/线性/指数）。",
-        (Param("model", "拟合模型", "choice", "auto",
-               (("auto", "auto（自动选择）"), ("constant", "常数"),
-                ("linear", "线性"), ("exponential", "指数")),),)
+        "envelope", tr("包络拟合"),
+        tr("对指定区间求 Hilbert 包络并拟合（auto 会按残差自动选择常数/线性/指数）。"),
+        (Param("model", tr("拟合模型"), "choice", "auto",
+               (("auto", tr("auto（自动选择）")), ("constant", tr("常数")),
+                ("linear", tr("线性")), ("exponential", tr("指数"))),),)
         + _REGION,
         needs=("envelope",),
     ),
     StepSpec(
-        "stats", "区间统计",
-        "计算选区的 RMS、峰值、主频、THD 等；主频与 THD 受已知激励频率约束。",
+        "stats", tr("区间统计"),
+        tr("计算选区的 RMS、峰值、主频、THD 等；主频与 THD 受已知激励频率约束。"),
         _REGION + _FUNDAMENTAL,
         needs=("stats",),
     ),
     StepSpec(
-        "dual", "双通道时延与电平",
-        "比较两声道的主频幅值与到达时延。单声道文件自动跳过。",
+        "dual", tr("双通道时延与电平"),
+        tr("比较两声道的主频幅值与到达时延。单声道文件自动跳过。"),
         _FUNDAMENTAL,
         needs=("dual",),
         stereo_only=True,
     ),
     StepSpec(
-        "export_wav", "导出处理后 WAV",
-        "把当前处理结果另存为新 WAV，源文件不动。",
+        "export_wav", tr("导出处理后 WAV"),
+        tr("把当前处理结果另存为新 WAV，源文件不动。"),
         (
-            Param("suffix", "文件名后缀", "text", "_处理后"),
-            Param("subtype", "采样格式", "choice", "PCM_24",
+            Param("suffix", tr("文件名后缀"), "text", tr("_处理后")),
+            Param("subtype", tr("采样格式"), "choice", "PCM_24",
                   (("PCM_16", "PCM_16（16 bit）"), ("PCM_24", "PCM_24（24 bit）"),
-                   ("PCM_32", "PCM_32（32 bit）"), ("FLOAT", "FLOAT（32 bit 浮点）"))),
+                   ("PCM_32", "PCM_32（32 bit）"), ("FLOAT", tr("FLOAT（32 bit 浮点）")))),
         ),
     ),
     StepSpec(
-        "export_txt", "导出分析 TXT",
-        "定宽对齐的纯文本分析报告；可每个文件一份，也可合并成一份汇总。",
+        "export_txt", tr("导出分析 TXT"),
+        tr("定宽对齐的纯文本分析报告；可每个文件一份，也可合并成一份汇总。"),
         (
-            Param("aggregate", "输出方式", "choice", "file",
-                  (("file", "每个文件一个 TXT"), ("single", "合并为一个 TXT"))),
-            Param("merged_name", "合并文件名", "text", "批量分析汇总.txt"),
-            Param("suffix", "文件名后缀", "text", "_分析"),
-            Param("sections", "导出章节", "checklist",
+            Param("aggregate", tr("输出方式"), "choice", "file",
+                  (("file", tr("每个文件一个 TXT")), ("single", tr("合并为一个 TXT")))),
+            Param("merged_name", tr("合并文件名"), "text", tr("批量分析汇总.txt")),
+            Param("suffix", tr("文件名后缀"), "text", tr("_分析")),
+            Param("sections", tr("导出章节"), "checklist",
                   tuple(key for key, _ in SECTION_ORDER),
                   tuple(SECTION_ORDER),
-                  tooltip="合并模式下建议关掉原坐标，否则汇总文件会非常大"),
-            Param("coord_mode", "坐标取法", "choice", "per_second",
-                  (("per_second", "每秒固定点数"), ("step", "按步长抽稀"),
-                   ("all", "全部采样点"))),
-            Param("coord_per_second", "每秒点数", "float", 1000.0, minimum=1.0,
+                  tooltip=tr("合并模式下建议关掉原坐标，否则汇总文件会非常大")),
+            Param("coord_mode", tr("坐标取法"), "choice", "per_second",
+                  (("per_second", tr("每秒固定点数")), ("step", tr("按步长抽稀")),
+                   ("all", tr("全部采样点")))),
+            Param("coord_per_second", tr("每秒点数"), "float", 1000.0, minimum=1.0,
                   maximum=1.0e6, decimals=1, step=100.0),
-            Param("coord_step", "抽稀步长", "int", 1, minimum=1, maximum=1_000_000),
+            Param("coord_step", tr("抽稀步长"), "int", 1, minimum=1, maximum=1_000_000),
         ),
     ),
     StepSpec(
-        "export_png", "导出图像 PNG",
-        "按论文或屏幕版式重新渲染图像，不是界面截图。",
+        "export_png", tr("导出图像 PNG"),
+        tr("按论文或屏幕版式重新渲染图像，不是界面截图。"),
         (
-            Param("kinds", "图像类型", "checklist", ("wave",),
-                  (("wave", "波形图"), ("spectrum", "幅值谱"), ("spectrogram", "时频图"))),
-            Param("layout", "版式", "choice", "paper_single",
-                  (("paper_single", "论文单栏 3.5×2.45 in（600 dpi）"),
-                   ("paper_double", "论文双栏 7.0×2.6 in（600 dpi）"),
-                   ("screen", "屏幕 1600×900"))),
-            Param("envelope", "波形图叠包络", "bool", True),
-            Param("fit", "波形图叠拟合曲线", "bool", False),
-            Param("region", "波形图标出选区", "bool", False),
+            Param("kinds", tr("图像类型"), "checklist", ("wave",),
+                  (("wave", tr("波形图")), ("spectrum", tr("幅值谱")), ("spectrogram", tr("时频图")))),
+            Param("layout", tr("版式"), "choice", "paper_single",
+                  (("paper_single", tr("论文单栏 3.5×2.45 in（600 dpi）")),
+                   ("paper_double", tr("论文双栏 7.0×2.6 in（600 dpi）")),
+                   ("screen", tr("屏幕 1600×900")))),
+            Param("envelope", tr("波形图叠包络"), "bool", True),
+            Param("fit", tr("波形图叠拟合曲线"), "bool", False),
+            Param("region", tr("波形图标出选区"), "bool", False),
         ),
     ),
     StepSpec(
-        "export_csv", "导出统计 CSV",
-        "统计量写成 CSV，可直接进 Excel / Origin；默认合并成一张表。",
+        "export_csv", tr("导出统计 CSV"),
+        tr("统计量写成 CSV，可直接进 Excel / Origin；默认合并成一张表。"),
         (
-            Param("aggregate", "输出方式", "choice", "single",
-                  (("single", "合并为一个 CSV（每个文件一行）"),
-                   ("file", "每个文件一个 CSV"))),
-            Param("merged_name", "合并文件名", "text", "批量统计.csv"),
-            Param("suffix", "文件名后缀", "text", "_统计"),
+            Param("aggregate", tr("输出方式"), "choice", "single",
+                  (("single", tr("合并为一个 CSV（每个文件一行）")),
+                   ("file", tr("每个文件一个 CSV")))),
+            Param("merged_name", tr("合并文件名"), "text", tr("批量统计.csv")),
+            Param("suffix", tr("文件名后缀"), "text", tr("_统计")),
         ),
     ),
     StepSpec(
-        "export_html", "生成 HTML 报告",
-        "每个文件一份独立报告，含波形、频谱与统计表。",
-        (Param("suffix", "文件名后缀", "text", "_报告"),),
+        "export_html", tr("生成 HTML 报告"),
+        tr("每个文件一份独立报告，含波形、频谱与统计表。"),
+        (Param("suffix", tr("文件名后缀"), "text", tr("_报告")),),
     ),
 )
 
@@ -272,7 +273,7 @@ def describe_step(step: dict[str, Any]) -> str:
     kind = step.get("kind", "")
     spec = STEP_SPEC_BY_KIND.get(kind)
     if spec is None:
-        return kind or "（未知步骤）"
+        return kind or tr("（未知步骤）")
     params = step.get("params") or {}
     skip = irrelevant_keys(kind, params)
     parts: list[str] = []
@@ -293,12 +294,12 @@ def describe_step(step: dict[str, Any]) -> str:
             continue
         if param.kind == "bool":
             if bool(value) != bool(param.default):
-                parts.append(("含" if value else "不含") + param.label)
+                parts.append((tr("含") if value else tr("不含")) + param.label)
             continue
         if param.kind == "text":
             if str(value) != str(param.default):
                 # 合并文件名、文件名后缀都是 text，不能一律写成“后缀 xxx”
-                prefix = "后缀" if "后缀" in param.label else param.label
+                prefix = tr("后缀") if tr("后缀") in param.label else param.label
                 parts.append(f"{prefix} {value}")
             continue
         if value != param.default:
@@ -347,7 +348,7 @@ def resolve_region(params: dict[str, Any], duration: float) -> tuple[float, floa
     start = max(0.0, min(start, duration))
     end = max(start, min(end, duration))
     if end - start <= 0.0:
-        raise ValueError("统计区间为空：请检查起止时间或去掉的首尾长度")
+        raise ValueError(tr("统计区间为空：请检查起止时间或去掉的首尾长度"))
     return start, end
 
 
@@ -408,18 +409,18 @@ class BatchResult:
         return sum(1 for item in self.files if not item.ok)
 
     def summary(self) -> str:
-        head = f"共 {len(self.files)} 个文件，成功 {self.ok_count}，失败 {self.fail_count}"
+        head = tf('共 {_v0} 个文件，成功 {_v1}，失败 {_v2}', _v0=(len(self.files)), _v1=(self.ok_count), _v2=(self.fail_count))
         if self.cancelled:
-            head += "（已取消）"
-        head += f"，用时 {self.seconds:.1f} s"
+            head += tr("（已取消）")
+        head += tf('，用时 {_v0:.1f} s', _v0=(self.seconds))
         if self.outputs:
-            head += f"，输出 {len(self.outputs)} 个文件"
+            head += tf('，输出 {_v0} 个文件', _v0=(len(self.outputs)))
         failures = [item for item in self.files if not item.ok]
         if failures:
             head += "\n" + "\n".join(
                 f"· {item.path.name}：{item.error}" for item in failures[:8])
             if len(failures) > 8:
-                head += f"\n· 其余 {len(failures) - 8} 个失败略"
+                head += tf('\n· 其余 {_v0} 个失败略', _v0=(len(failures) - 8))
         return head
 
 
@@ -517,9 +518,8 @@ def _apply_step(state: _State, step: dict[str, Any], ctx: dict[str, Any]) -> Non
             # 阈值过低或数据本身以冲击为主时，去噪会把大半数据标成无效，
             # 后续统计会静默给出毫无意义的数字。这里宁可整份失败。
             raise ValueError(
-                f"去噪把 {invalid_ratio * 100:.0f}% 的采样点标为无效，"
-                "请提高稳健阈值或先确认数据是否异常")
-        state.notes.append(f"去噪修复 {total_repaired} 处，标记无效 {total_excluded} 处")
+                tf('去噪把 {_v0:.0f}% 的采样点标为无效，请提高稳健阈值或先确认数据是否异常', _v0=(invalid_ratio * 100)))
+        state.notes.append(tf('去噪修复 {total_repaired} 处，标记无效 {total_excluded} 处', total_repaired=(total_repaired), total_excluded=(total_excluded)))
         return
 
     if kind == "trim":
@@ -533,7 +533,7 @@ def _apply_step(state: _State, step: dict[str, Any], ctx: dict[str, Any]) -> Non
         state.fourier = None
         state.dual = None
         state.notes.append(
-            f"裁剪至 {trimmed.start_seconds:.3f}–{trimmed.end_seconds:.3f} s")
+            tf('裁剪至 {_v0:.3f}–{_v1:.3f} s', _v0=(trimmed.start_seconds), _v1=(trimmed.end_seconds)))
         return
 
     if kind == "envelope":
@@ -548,7 +548,7 @@ def _apply_step(state: _State, step: dict[str, Any], ctx: dict[str, Any]) -> Non
                     & np.asarray(state.channel_mask(0), dtype=bool)[i0:i1])
         indexes = np.flatnonzero(selected)
         if indexes.size < 2:
-            raise ValueError("选区内有效包络点不足")
+            raise ValueError(tr("选区内有效包络点不足"))
         if indexes.size > 5000:
             indexes = indexes[np.linspace(0, indexes.size - 1, 5000).astype(int)]
         state.envelope = values
@@ -564,13 +564,12 @@ def _apply_step(state: _State, step: dict[str, Any], ctx: dict[str, Any]) -> Non
         state.fundamental = resolve_fundamental(params, state.path.name)
         state.stats = _ensure_stats(state, params)
         state.notes.append(
-            f"主频 {state.stats['main_frequency_hz']:.3f} Hz，"
-            f"电平 {state.stats['main_amplitude_dbfs']:.2f} dBFS")
+            tf('主频 {_v0:.3f} Hz，电平 {_v1:.2f} dBFS', _v0=(state.stats['main_frequency_hz']), _v1=(state.stats['main_amplitude_dbfs'])))
         return
 
     if kind == "dual":
         if state.channels < 2:
-            state.notes.append("单声道文件，已跳过双通道分析")
+            state.notes.append(tr("单声道文件，已跳过双通道分析"))
             return
         from .dual_channel import analyze_dual_channel
 
@@ -581,7 +580,7 @@ def _apply_step(state: _State, step: dict[str, Any], ctx: dict[str, Any]) -> Non
         return
 
     if kind == "export_wav":
-        target = _output_path(state, params, "_处理后", ".wav", ctx)
+        target = _output_path(state, params, tr("_处理后"), ".wav", ctx)
         write_wav(target, state.samples, sample_rate,
                   subtype=str(params.get("subtype", "PCM_24")))
         _record_output(state, target, ctx)
@@ -603,7 +602,7 @@ def _apply_step(state: _State, step: dict[str, Any], ctx: dict[str, Any]) -> Non
         _export_html(state, params, ctx)
         return
 
-    raise ValueError(f"未知步骤类型：{kind}")
+    raise ValueError(tf('未知步骤类型：{kind}', kind=(kind)))
 
 
 def _output_dir(ctx: dict[str, Any], state: _State) -> Path:
@@ -642,7 +641,7 @@ def _export_txt(state: _State, params: dict[str, Any], ctx: dict[str, Any]) -> N
         append = target.exists() and target.stat().st_size > 0
         ctx["merged_outputs"].add(str(target))
     else:
-        target = _output_path(state, params, "_分析", ".txt", ctx)
+        target = _output_path(state, params, tr("_分析"), ".txt", ctx)
         append = False
 
     result = write_analysis_txt(
@@ -654,7 +653,7 @@ def _export_txt(state: _State, params: dict[str, Any], ctx: dict[str, Any]) -> N
         subtype=state.audio.subtype,
         size_mb=size_mb,
         md5=file_md5(source),
-        data_label="批量处理结果（已编辑）" if state.edits else "源文件（未修改）",
+        data_label=tr("批量处理结果（已编辑）") if state.edits else tr("源文件（未修改）"),
         channels=state.channels,
         edit_depth=len(state.edits),
         denoise_edits=state.edits.count("denoise"),
@@ -673,7 +672,7 @@ def _export_txt(state: _State, params: dict[str, Any], ctx: dict[str, Any]) -> N
         append=append,
         skip_footer=bool(str(params.get("aggregate", "file")) == "single"),
     )
-    state.notes.append(f"TXT {result['rows']:,} 行 → {target.name}")
+    state.notes.append(tf('TXT {_v0:,} 行 → {_v1}', _v0=(result['rows']), _v1=(target.name)))
     if str(params.get("aggregate", "file")) != "single":
         _record_output(state, target, ctx)
 
@@ -688,7 +687,7 @@ def _export_png(state: _State, params: dict[str, Any], ctx: dict[str, Any]) -> N
     root = _output_dir(ctx, state)
 
     if "wave" in kinds:
-        target = root / f"{stem}_波形.png"
+        target = root / tf('{stem}_波形.png', stem=(stem))
         render_waveform_png(
             target,
             samples=state.channel_samples(0),
@@ -703,13 +702,13 @@ def _export_png(state: _State, params: dict[str, Any], ctx: dict[str, Any]) -> N
         _record_output(state, target, ctx)
 
     if "spectrum" in kinds:
-        target = root / f"{stem}_幅值谱.png"
+        target = root / tf('{stem}_幅值谱.png', stem=(stem))
         render_spectrum_png(target, _ensure_fourier(state, fundamental), options,
                             annotate_peaks=True, mark_harmonics=True)
         _record_output(state, target, ctx)
 
     if "spectrogram" in kinds:
-        target = root / f"{stem}_时频图.png"
+        target = root / tf('{stem}_时频图.png', stem=(stem))
         spectrogram = stft_spectrogram(state.channel_samples(0), state.sample_rate)
         render_spectrogram_png(target, spectrogram, options)
         _record_output(state, target, ctx)
@@ -731,7 +730,7 @@ def _export_csv(state: _State, params: dict[str, Any], ctx: dict[str, Any]) -> N
     if str(params.get("aggregate", "single")) == "single":
         ctx["csv_rows"].append(row)
         return
-    target = _output_path(state, params, "_统计", ".csv", ctx)
+    target = _output_path(state, params, tr("_统计"), ".csv", ctx)
     export_rows_csv(target, [row])
     _record_output(state, target, ctx)
 
@@ -746,7 +745,7 @@ def _export_html(state: _State, params: dict[str, Any], ctx: dict[str, Any]) -> 
         str(state.path), state.sample_rate, 0, stats, fourier,
         np.array(state.channel_samples(0), copy=True),
         state.envelope, state.fit, state.denoise, "")
-    target = _output_path(state, params, "_报告", ".html", ctx)
+    target = _output_path(state, params, tr("_报告"), ".html", ctx)
     save_report(target, content)
     _record_output(state, target, ctx)
 
@@ -755,10 +754,10 @@ def _export_html(state: _State, params: dict[str, Any], ctx: dict[str, Any]) -> 
 
 
 def _merged_banner(total: int, files: Sequence[Path]) -> str:
-    lines = ["声音实验 WAV 数据处理程序 — 批量分析汇总", ""]
-    lines.append(f"# 文件数：{total}")
-    lines.append("# 数据来源：批量处理（每个文件的完整报告按处理顺序依次附在下方）")
-    lines.append("# 分段方式：每段以「分析数据导出」标题开始，含源文件名、路径与 MD5 指纹")
+    lines = [tr("声音实验 WAV 数据处理程序 — 批量分析汇总"), ""]
+    lines.append(tf('# 文件数：{total}', total=(total)))
+    lines.append(tr("# 数据来源：批量处理（每个文件的完整报告按处理顺序依次附在下方）"))
+    lines.append(tr("# 分段方式：每段以「分析数据导出」标题开始，含源文件名、路径与 MD5 指纹"))
     lines.append("")
     for index, path in enumerate(files, 1):
         lines.append(f"# [{index:>4}] {path}")
@@ -824,13 +823,13 @@ def run_batch(
     if needs_txt_merge:
         base = root or paths[0].parent
         base.mkdir(parents=True, exist_ok=True)
-        name = merged_txt_name or _merged_name(script, "export_txt", "批量分析汇总.txt")
+        name = merged_txt_name or _merged_name(script, "export_txt", tr("批量分析汇总.txt"))
         target = base / name
         target.write_text(_merged_banner(total, paths), encoding="utf-8-sig")
         ctx["merged_txt"] = target
     if needs_csv_merge:
         base = root or paths[0].parent
-        name = merged_csv_name or _merged_name(script, "export_csv", "批量统计.csv")
+        name = merged_csv_name or _merged_name(script, "export_csv", tr("批量统计.csv"))
         ctx["merged_csv"] = base / name
 
     for position, path in enumerate(paths, 1):
@@ -850,7 +849,7 @@ def run_batch(
         try:
             quality = audio.quality_report()[0]
             if quality["clipping_warning"]:
-                state.notes.append("警告：源文件可能存在削顶")
+                state.notes.append(tr("警告：源文件可能存在削顶"))
             state.notes.append(
                 f"{audio.duration:.3f} s / {audio.sample_rate} Hz / {(audio.subtype or '未知')}")
 
@@ -885,7 +884,7 @@ def run_batch(
         target = ctx["merged_txt"]
         if target.exists():
             with target.open("a", encoding="utf-8", newline="\n") as handle:
-                handle.write("\n# 批量处理结束：" + time.strftime("%Y-%m-%d %H:%M:%S") + "\n")
+                handle.write(tr("\n# 批量处理结束：") + time.strftime("%Y-%m-%d %H:%M:%S") + "\n")
 
     result.outputs = list(ctx["outputs"]) + sorted(str(item) for item in ctx["merged_outputs"])
     if needs_csv_merge and ctx["csv_rows"]:

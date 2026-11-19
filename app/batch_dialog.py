@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from core.i18n import tf, tr
 import json
 from pathlib import Path
 
@@ -31,7 +32,7 @@ class BatchDialog(QDialog):
     def __init__(self, parent: QWidget | None = None, default_dir: str = "",
                  settings: QSettings | None = None):
         super().__init__(parent)
-        self.setWindowTitle("批量处理 — 脚本编辑")
+        self.setWindowTitle(tr("批量处理 — 脚本编辑"))
         self.resize(1010, 730)
         self.steps: list[dict] = []
         self.files: list[str] = []
@@ -56,11 +57,11 @@ class BatchDialog(QDialog):
         outer.addWidget(self._file_panel())
 
         footer = QHBoxLayout()
-        hint = QLabel("步骤自上而下执行；只有“导出”类步骤会写文件，源文件始终只读。")
+        hint = QLabel(tr("步骤自上而下执行；只有“导出”类步骤会写文件，源文件始终只读。"))
         hint.setStyleSheet("color: #607d8b;")
-        cancel = QPushButton("取消")
+        cancel = QPushButton(tr("取消"))
         cancel.clicked.connect(self.reject)
-        self.start_button = QPushButton("开始处理")
+        self.start_button = QPushButton(tr("开始处理"))
         self.start_button.setDefault(True)
         self.start_button.setMinimumWidth(120)
         self.start_button.clicked.connect(self._on_start)
@@ -73,7 +74,7 @@ class BatchDialog(QDialog):
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(0, 0, 6, 0)
-        title = QLabel("任务步骤")
+        title = QLabel(tr("任务步骤"))
         title.setStyleSheet("font-weight: 600;")
         layout.addWidget(title)
 
@@ -86,28 +87,28 @@ class BatchDialog(QDialog):
         self.step_list.currentRowChanged.connect(self._on_row_changed)
         layout.addWidget(self.step_list, 1)
 
-        add_button = QPushButton("＋ 新增步骤")
-        add_button.setToolTip("选择要加入流水线的处理功能")
+        add_button = QPushButton(tr("＋ 新增步骤"))
+        add_button.setToolTip(tr("选择要加入流水线的处理功能"))
         add_button.clicked.connect(self._show_add_menu)
-        remove_button = QPushButton("－ 删除")
+        remove_button = QPushButton(tr("－ 删除"))
         remove_button.clicked.connect(self._remove_step)
         row1 = QHBoxLayout()
         row1.addWidget(add_button, 2)
         row1.addWidget(remove_button, 1)
         layout.addLayout(row1)
 
-        up_button = QPushButton("上移")
+        up_button = QPushButton(tr("上移"))
         up_button.clicked.connect(lambda: self._move_step(-1))
-        down_button = QPushButton("下移")
+        down_button = QPushButton(tr("下移"))
         down_button.clicked.connect(lambda: self._move_step(1))
         row2 = QHBoxLayout()
         row2.addWidget(up_button)
         row2.addWidget(down_button)
         layout.addLayout(row2)
 
-        load_button = QPushButton("载入脚本…")
+        load_button = QPushButton(tr("载入脚本…"))
         load_button.clicked.connect(self._load_script)
-        save_button = QPushButton("保存脚本…")
+        save_button = QPushButton(tr("保存脚本…"))
         save_button.clicked.connect(self._save_script)
         row3 = QHBoxLayout()
         row3.addWidget(load_button)
@@ -119,9 +120,9 @@ class BatchDialog(QDialog):
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(6, 0, 0, 0)
-        self.step_title = QLabel("尚未添加步骤")
+        self.step_title = QLabel(tr("尚未添加步骤"))
         self.step_title.setStyleSheet("font-weight: 600; font-size: 11pt;")
-        self.step_desc = QLabel("点左侧“＋ 新增步骤”挑一个功能，再在这里设置参数。")
+        self.step_desc = QLabel(tr("点左侧“＋ 新增步骤”挑一个功能，再在这里设置参数。"))
         self.step_desc.setWordWrap(True)
         self.step_desc.setStyleSheet("color: #546e7a;")
         layout.addWidget(self.step_title)
@@ -142,11 +143,11 @@ class BatchDialog(QDialog):
         layout.setSpacing(6)
 
         row1 = QHBoxLayout()
-        self.file_label = QLabel("待处理文件：尚未选择")
+        self.file_label = QLabel(tr("待处理文件：尚未选择"))
         self.file_label.setWordWrap(True)
-        pick = QPushButton("选择待处理的文件…")
+        pick = QPushButton(tr("选择待处理的文件…"))
         pick.clicked.connect(self._pick_files)
-        clear = QPushButton("清空")
+        clear = QPushButton(tr("清空"))
         clear.clicked.connect(self._clear_files)
         row1.addWidget(self.file_label, 1)
         row1.addWidget(pick)
@@ -154,11 +155,11 @@ class BatchDialog(QDialog):
         layout.addLayout(row1)
 
         row2 = QHBoxLayout()
-        row2.addWidget(QLabel("输出目录"))
+        row2.addWidget(QLabel(tr("输出目录")))
         self.output_dir = QLineEdit()
-        self.output_dir.setPlaceholderText("留空 = 与源文件同目录")
+        self.output_dir.setPlaceholderText(tr("留空 = 与源文件同目录"))
         self.output_dir.textChanged.connect(self._refresh_hint)
-        browse = QPushButton("浏览…")
+        browse = QPushButton(tr("浏览…"))
         browse.clicked.connect(self._pick_output_dir)
         row2.addWidget(self.output_dir, 1)
         row2.addWidget(browse)
@@ -242,8 +243,8 @@ class BatchDialog(QDialog):
     def _rebuild_form(self) -> None:
         self._reset_form()
         if self._index < 0:
-            self.step_title.setText("尚未添加步骤")
-            self.step_desc.setText("点左侧“＋ 新增步骤”挑一个功能，再在这里设置参数。")
+            self.step_title.setText(tr("尚未添加步骤"))
+            self.step_desc.setText(tr("点左侧“＋ 新增步骤”挑一个功能，再在这里设置参数。"))
             return
         step = self.steps[self._index]
         spec = STEP_SPEC_BY_KIND[step["kind"]]
@@ -368,7 +369,7 @@ class BatchDialog(QDialog):
     # ------------------------------------------------------------ 文件与输出
     def _pick_files(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
-            self, "选择待处理的 WAV（可多选）", "", "WAV 音频 (*.wav)")
+            self, tr("选择待处理的 WAV（可多选）"), "", tr("WAV 音频 (*.wav)"))
         if paths:
             self.files = list(dict.fromkeys(paths))     # 去重且保序
             self._refresh_hint()
@@ -380,97 +381,97 @@ class BatchDialog(QDialog):
     def _pick_output_dir(self) -> None:
         current = self.output_dir.text().strip()
         start = current if current and Path(current).is_dir() else ""
-        folder = QFileDialog.getExistingDirectory(self, "选择输出目录", start)
+        folder = QFileDialog.getExistingDirectory(self, tr("选择输出目录"), start)
         if folder:
             self.output_dir.setText(folder)
 
     def _refresh_hint(self) -> None:
         if not self.files:
-            self.file_label.setText("待处理文件：尚未选择")
+            self.file_label.setText(tr("待处理文件：尚未选择"))
         else:
             names = [Path(item).name for item in self.files[:3]]
-            more = "" if len(self.files) <= 3 else f" …（共 {len(self.files)} 个）"
+            more = "" if len(self.files) <= 3 else tf(' …（共 {_v0} 个）', _v0=(len(self.files)))
             self.file_label.setText(
-                f"待处理文件：{len(self.files)} 个 → " + "、".join(names) + more)
+                tf('待处理文件：{_v0} 个 → ', _v0=(len(self.files))) + "、".join(names) + more)
             self.file_label.setToolTip("\n".join(self.files))
 
         parts: list[str] = []
         total = len(self.steps)
         if total:
             exports = sum(1 for step in self.steps if step["kind"] in EXPORT_KINDS)
-            parts.append(f"共 {total} 个步骤（其中 {exports} 个导出步骤）")
+            parts.append(tf('共 {total} 个步骤（其中 {exports} 个导出步骤）', total=(total), exports=(exports)))
             target = self.output_dir.text().strip()
-            parts.append(f"输出到 {target}" if target else "输出到各源文件所在目录")
+            parts.append(tf('输出到 {target}', target=(target)) if target else tr("输出到各源文件所在目录"))
         self.summary_label.setText("；".join(parts))
 
     # ------------------------------------------------------------ 脚本存取
     def _save_script(self) -> None:
         if not self.steps:
-            QMessageBox.information(self, "没有可保存的步骤", "请先添加至少一个任务步骤。")
+            QMessageBox.information(self, tr("没有可保存的步骤"), tr("请先添加至少一个任务步骤。"))
             return
         path, _ = QFileDialog.getSaveFileName(
-            self, "保存脚本", "batch_script.json", "JSON (*.json)")
+            self, tr("保存脚本"), "batch_script.json", "JSON (*.json)")
         if not path:
             return
         payload = {"version": 1, "steps": self.steps}
         try:
             Path(path).write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-            self.summary_label.setText(f"脚本已保存到 {path}")
+            self.summary_label.setText(tf('脚本已保存到 {path}', path=(path)))
         except OSError as exc:
-            QMessageBox.warning(self, "保存失败", str(exc))
+            QMessageBox.warning(self, tr("保存失败"), str(exc))
 
     def _load_script(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "载入脚本", "", "JSON (*.json)")
+        path, _ = QFileDialog.getOpenFileName(self, tr("载入脚本"), "", "JSON (*.json)")
         if not path:
             return
         try:
             payload = json.loads(Path(path).read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
-            QMessageBox.warning(self, "载入失败", str(exc))
+            QMessageBox.warning(self, tr("载入失败"), str(exc))
             return
         steps = normalize_steps(payload.get("steps") or [])
         if not steps:
-            QMessageBox.warning(self, "载入失败", "文件里没有可识别的任务步骤。")
+            QMessageBox.warning(self, tr("载入失败"), tr("文件里没有可识别的任务步骤。"))
             return
         self.steps = steps
         self._index = -1
         self._refresh_list()
         self.step_list.setCurrentRow(0)
-        self.summary_label.setText(f"已载入 {len(steps)} 个步骤")
+        self.summary_label.setText(tf('已载入 {_v0} 个步骤', _v0=(len(steps))))
 
     # ------------------------------------------------------------ 校验与返回
     def _on_start(self) -> None:
         if not self.steps:
-            QMessageBox.information(self, "还没有步骤", "请先用“＋ 新增步骤”搭一条流水线。")
+            QMessageBox.information(self, tr("还没有步骤"), tr("请先用“＋ 新增步骤”搭一条流水线。"))
             return
         if not self.files:
-            QMessageBox.information(self, "还没有文件", "请先点“选择待处理的文件”。")
+            QMessageBox.information(self, tr("还没有文件"), tr("请先点“选择待处理的文件”。"))
             return
         for step in self.steps:
             if step["kind"] == "export_txt":
                 params = step["params"]
                 if params.get("aggregate") == "single" and not str(params.get("merged_name") or "").strip():
-                    QMessageBox.warning(self, "合并文件名不能为空",
-                                        "“导出分析 TXT”选了合并方式，请填写合并文件名。")
+                    QMessageBox.warning(self, tr("合并文件名不能为空"),
+                                        tr("“导出分析 TXT”选了合并方式，请填写合并文件名。"))
                     return
                 if not params.get("sections"):
-                    QMessageBox.warning(self, "没有选章节",
-                                        "“导出分析 TXT”至少要勾一个章节。")
+                    QMessageBox.warning(self, tr("没有选章节"),
+                                        tr("“导出分析 TXT”至少要勾一个章节。"))
                     return
             if step["kind"] == "export_csv" and step["params"].get("aggregate") == "single":
                 if not str(step["params"].get("merged_name") or "").strip():
-                    QMessageBox.warning(self, "合并文件名不能为空",
-                                        "“导出统计 CSV”选了合并方式，请填写合并文件名。")
+                    QMessageBox.warning(self, tr("合并文件名不能为空"),
+                                        tr("“导出统计 CSV”选了合并方式，请填写合并文件名。"))
                     return
             if step["kind"] == "export_png" and not step["params"].get("kinds"):
-                QMessageBox.warning(self, "没有选图像类型",
-                                    "“导出图像 PNG”至少要勾一种图像。")
+                QMessageBox.warning(self, tr("没有选图像类型"),
+                                    tr("“导出图像 PNG”至少要勾一种图像。"))
                 return
         if not any(step["kind"] in EXPORT_KINDS for step in self.steps):
             answer = QMessageBox.question(
-                self, "没有导出步骤",
-                "当前脚本只做分析、不写任何文件。确定继续吗？",
+                self, tr("没有导出步骤"),
+                tr("当前脚本只做分析、不写任何文件。确定继续吗？"),
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if answer != QMessageBox.Yes:
                 return
@@ -506,7 +507,7 @@ class BatchDialog(QDialog):
         saved_dir = self._settings.value("batch/output_dir", "")
         self.output_dir.setText(str(saved_dir or default_dir or ""))
         if restored:
-            self.summary_label.setText(f"已恢复上次的 {len(self.steps)} 个步骤")
+            self.summary_label.setText(tf('已恢复上次的 {_v0} 个步骤', _v0=(len(self.steps))))
         self._refresh_hint()
 
     # ------------------------------------------------------------ 对外

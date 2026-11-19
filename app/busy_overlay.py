@@ -1,6 +1,7 @@
 """覆盖式“处理中”提示：旋转指示器 + 文案，替代系统“未响应”观感。"""
 from __future__ import annotations
 
+from core.i18n import tf, tr
 from PySide6.QtCore import QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import QWidget
@@ -15,7 +16,7 @@ class BusyOverlay(QWidget):
         self.setFocusPolicy(Qt.NoFocus)
         self.setCursor(Qt.BusyCursor)
         self._angle = 0
-        self._text = "处理中…"
+        self._text = tr("处理中…")
         self._hint = ""
         self._timer = QTimer(self)
         self._timer.setInterval(40)

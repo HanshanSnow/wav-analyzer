@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+from core.i18n import tf, tr
 import copy
 from typing import Any
 
@@ -32,11 +33,11 @@ class CalibrationDialog(QDialog):
         current_dbfs: float | None = None,
     ):
         super().__init__(parent)
-        self.setWindowTitle("声学校准")
+        self.setWindowTitle(tr("声学校准"))
         self.resize(640, 520)
         self.profiles: list[Calibration] = copy.deepcopy(profiles or [])
         if not self.profiles:
-            self.profiles = [Calibration(name="默认校准")]
+            self.profiles = [Calibration(name=tr("默认校准"))]
         self.current_dbfs = current_dbfs
         self.active = active or self.profiles[0].name
 
@@ -46,11 +47,11 @@ class CalibrationDialog(QDialog):
         picker = QHBoxLayout()
         self.picker = QComboBox()
         self.picker.currentIndexChanged.connect(self._on_pick)
-        new_button = QPushButton("新建")
+        new_button = QPushButton(tr("新建"))
         new_button.clicked.connect(self._create)
-        delete_button = QPushButton("删除")
+        delete_button = QPushButton(tr("删除"))
         delete_button.clicked.connect(self._delete)
-        picker.addWidget(QLabel("配置"))
+        picker.addWidget(QLabel(tr("配置")))
         picker.addWidget(self.picker, 1)
         picker.addWidget(new_button)
         picker.addWidget(delete_button)
@@ -60,8 +61,8 @@ class CalibrationDialog(QDialog):
         layout.addWidget(self._caveats())
 
         self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        self.buttons.button(QDialogButtonBox.Ok).setText("保存并应用")
-        self.buttons.button(QDialogButtonBox.Cancel).setText("取消")
+        self.buttons.button(QDialogButtonBox.Ok).setText(tr("保存并应用"))
+        self.buttons.button(QDialogButtonBox.Cancel).setText(tr("取消"))
         self.buttons.accepted.connect(self._accept)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
@@ -71,9 +72,9 @@ class CalibrationDialog(QDialog):
     # ------------------------------------------------------------ 静态文案
     def _intro(self) -> QWidget:
         label = QLabel(
-            "把录音的数字满幅电平换算成声压级，只需要一个加性偏移："
+            tr("把录音的数字满幅电平换算成声压级，只需要一个加性偏移："
             "<b>dB SPL = dBFS + K</b>。K 可以由硬件参数推算，也可以用声压级已知的声源标定。"
-            "未配置校准时，程序只显示 dBFS，不会给出任何声压级。"
+            "未配置校准时，程序只显示 dBFS，不会给出任何声压级。")
         )
         label.setWordWrap(True)
         label.setStyleSheet("color:#37474f;")
@@ -81,9 +82,9 @@ class CalibrationDialog(QDialog):
 
     def _caveats(self) -> QWidget:
         label = QLabel(
-            "⚠ 两种麦克风不要用这套换算：<b>带 AGC/ALC 的模块</b>（如 MAX9814、多数 USB 会议麦）"
+            tr("⚠ 两种麦克风不要用这套换算：<b>带 AGC/ALC 的模块</b>（如 MAX9814、多数 USB 会议麦）"
             "增益会随声压自动变化；<b>录音已削顶</b>时 dBFS 被压平，反推的声压级系统性偏低。"
-            "另外系统录音音量必须是 100%（数字增益 0 dB），否则要把它折进前置增益里。"
+            "另外系统录音音量必须是 100%（数字增益 0 dB），否则要把它折进前置增益里。")
         )
         label.setWordWrap(True)
         label.setStyleSheet(
@@ -131,8 +132,8 @@ class CalibrationDialog(QDialog):
         self.ref_dbfs.setDecimals(2)
         self.ref_dbfs.setValue(-40.0)
         self.ref_dbfs.setSuffix(" dBFS")
-        self.grab_button = QPushButton("取当前统计")
-        self.grab_button.setToolTip("把当前选区的 RMS 电平填进来")
+        self.grab_button = QPushButton(tr("取当前统计"))
+        self.grab_button.setToolTip(tr("把当前选区的 RMS 电平填进来"))
         self.grab_button.clicked.connect(self._grab_dbfs)
         dbfs_row = QHBoxLayout()
         dbfs_row.addWidget(self.ref_dbfs)
@@ -141,14 +142,14 @@ class CalibrationDialog(QDialog):
         dbfs_wrap.setLayout(dbfs_row)
         dbfs_row.setContentsMargins(0, 0, 0, 0)
 
-        form.addRow("名称", self.name)
-        form.addRow("方式", self.mode)
+        form.addRow(tr("名称"), self.name)
+        form.addRow(tr("方式"), self.mode)
         self.param_labels: list[QLabel] = []
         self.param_rows: list[tuple[QLabel, QWidget]] = []
         for text, widget in (
-            ("麦克风灵敏度", self.sensitivity),
-            ("前置增益", self.gain),
-            ("声卡满幅输入", self.full_scale),
+            (tr("麦克风灵敏度"), self.sensitivity),
+            (tr("前置增益"), self.gain),
+            (tr("声卡满幅输入"), self.full_scale),
         ):
             label = QLabel(text)
             form.addRow(label, widget)
@@ -156,7 +157,7 @@ class CalibrationDialog(QDialog):
             self.param_rows.append((label, widget))
         self.ref_labels: list[QLabel] = []
         self.ref_rows: list[tuple[QLabel, QWidget]] = []
-        for text, widget in (("已知声压级", self.ref_spl), ("对应读数", dbfs_wrap)):
+        for text, widget in ((tr("已知声压级"), self.ref_spl), (tr("对应读数"), dbfs_wrap)):
             label = QLabel(text)
             form.addRow(label, widget)
             self.ref_labels.append(label)
@@ -187,7 +188,7 @@ class CalibrationDialog(QDialog):
         self.picker.blockSignals(True)
         self.picker.clear()
         for item in self.profiles:
-            suffix = "" if item.ready else "（未完成）"
+            suffix = "" if item.ready else tr("（未完成）")
             self.picker.addItem(f"{item.name}{suffix}")
         index = next((i for i, item in enumerate(self.profiles) if item.name == self.active), 0)
         self.picker.setCurrentIndex(index)
@@ -217,7 +218,7 @@ class CalibrationDialog(QDialog):
 
     def _collect(self) -> Calibration:
         item = Calibration(
-            name=self.name.text().strip() or "未命名校准",
+            name=self.name.text().strip() or tr("未命名校准"),
             mode=self.mode.currentData(),
             sensitivity_mv_pa=float(self.sensitivity.value()),
             preamp_gain_db=float(self.gain.value()),
@@ -243,7 +244,7 @@ class CalibrationDialog(QDialog):
 
     def _grab_dbfs(self) -> None:
         if self.current_dbfs is None:
-            QMessageBox.information(self, "没有可用读数", "请先在主界面点“计算选区统计”，再来取 RMS 电平。")
+            QMessageBox.information(self, tr("没有可用读数"), tr("请先在主界面点“计算选区统计”，再来取 RMS 电平。"))
             return
         self.ref_dbfs.setValue(float(self.current_dbfs))
 
@@ -251,30 +252,29 @@ class CalibrationDialog(QDialog):
         item = self._collect()
         offset = item.offset_db()
         if offset is None:
-            self.summary.setText("K 尚未确定：请补全当前方式的参数。")
+            self.summary.setText(tr("K 尚未确定：请补全当前方式的参数。"))
             self.hint.setText("")
             return
         self.summary.setText(
-            f"<b>K = {offset:+.2f} dB</b>　→　声压级 = 读数 + {offset:+.2f} dB<br>"
-            f"反过来：{item.spl(0.0):.1f} dB SPL 满幅，94 dB SPL 约对应 {item.dbfs(94.0):+.2f} dBFS。"
+            tf('<b>K = {offset:+.2f} dB</b>\u3000→\u3000声压级 = 读数 + {_v1:+.2f} dB<br>反过来：{_v2:.1f} dB SPL 满幅，94 dB SPL 约对应 {_v3:+.2f} dBFS。', offset=(offset), _v1=(offset), _v2=(item.spl(0.0)), _v3=(item.dbfs(94.0)))
         )
         self.hint.setText(
-            "K 是常数偏移，所以同一批录音只要麦克风、前置增益和系统音量不变，标定一次即可复用。")
+            tr("K 是常数偏移，所以同一批录音只要麦克风、前置增益和系统音量不变，标定一次即可复用。"))
 
     def _create(self) -> None:
         self._store()
-        self.profiles.append(Calibration(name=f"校准 {len(self.profiles) + 1}"))
+        self.profiles.append(Calibration(name=tf('校准 {_v0}', _v0=(len(self.profiles) + 1))))
         self.active = self.profiles[-1].name
         self._refresh_picker()
         self.picker.setCurrentIndex(len(self.profiles) - 1)
 
     def _delete(self) -> None:
         if len(self.profiles) <= 1:
-            QMessageBox.information(self, "至少保留一个配置", "可以清空参数当作“未校准”，无需删除。")
+            QMessageBox.information(self, tr("至少保留一个配置"), tr("可以清空参数当作“未校准”，无需删除。"))
             return
         index = self._index()
         name = self.profiles[index].name
-        if QMessageBox.question(self, "删除校准", f"确定删除「{name}」？") != QMessageBox.Yes:
+        if QMessageBox.question(self, tr("删除校准"), tf('确定删除「{name}」？', name=(name))) != QMessageBox.Yes:
             return
         self.profiles.pop(index)
         self.active = self.profiles[max(0, index - 1)].name
@@ -285,7 +285,7 @@ class CalibrationDialog(QDialog):
         try:
             item.validate()
         except ValueError as exc:
-            QMessageBox.warning(self, "参数不完整", str(exc))
+            QMessageBox.warning(self, tr("参数不完整"), str(exc))
             return
         self.profiles[self._index()] = item
         self.active = item.name

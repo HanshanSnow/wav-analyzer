@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.i18n import tf, tr
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -20,9 +21,9 @@ class AudioData:
         if self.samples.ndim == 1:
             self.samples = self.samples[:, None]
         if self.samples.ndim != 2 or self.samples.shape[0] == 0:
-            raise ValueError("音频数据必须是非空的 [采样点, 声道] 数组")
+            raise ValueError(tr("音频数据必须是非空的 [采样点, 声道] 数组"))
         if self.sample_rate <= 0:
-            raise ValueError("采样率必须为正数")
+            raise ValueError(tr("采样率必须为正数"))
 
     @property
     def channels(self) -> int:
@@ -34,7 +35,7 @@ class AudioData:
 
     def channel(self, index: int) -> np.ndarray:
         if not 0 <= index < self.channels:
-            raise IndexError(f"声道索引越界：{index}")
+            raise IndexError(tf('声道索引越界：{index}', index=(index)))
         return self.samples[:, index].copy()
 
     def quality_report(self) -> list[dict[str, Any]]:
@@ -62,7 +63,7 @@ class AudioData:
 def read_wav(path: str | Path) -> AudioData:
     source = Path(path)
     if not source.is_file():
-        raise FileNotFoundError(f"WAV 文件不存在：{source}")
+        raise FileNotFoundError(tf('WAV 文件不存在：{source}', source=(source)))
     samples, sample_rate = sf.read(str(source), dtype="float64", always_2d=True)
     info = sf.info(str(source))
     return AudioData(samples, int(sample_rate), source, info.subtype or "")
@@ -75,8 +76,8 @@ def write_wav(path: str | Path, samples: np.ndarray, sample_rate: int, subtype: 
     if data.ndim == 1:
         data = data[:, None]
     if data.size == 0 or data.ndim != 2:
-        raise ValueError("没有可写入的音频数据")
+        raise ValueError(tr("没有可写入的音频数据"))
     if not np.isfinite(data).all():
-        raise ValueError("音频中含 NaN 或无穷值，无法导出")
+        raise ValueError(tr("音频中含 NaN 或无穷值，无法导出"))
     sf.write(str(target), np.clip(data, -1.0, 1.0), sample_rate, subtype=subtype)
     return target

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.i18n import tf, tr
 import keyring
 from PySide6.QtCore import QSettings
 from PySide6.QtWidgets import (
@@ -24,20 +25,20 @@ VENDOR_PRESETS: dict[str, dict] = {
     "DeepSeek（深度求索）": {
         "base_url": "https://api.deepseek.com/v1",
         "models": ["deepseek-chat", "deepseek-reasoner"],
-        "key_hint": "在 platform.deepseek.com 的 API keys 页面创建，形如 sk-…",
+        "key_hint": tr("在 platform.deepseek.com 的 API keys 页面创建，形如 sk-…"),
     },
     "Moonshot（月之暗面 Kimi）": {
         "base_url": "https://api.moonshot.cn/v1",
         "models": ["kimi-latest", "kimi-k2-0905-preview", "moonshot-v1-32k", "moonshot-v1-8k"],
-        "key_hint": "在 platform.moonshot.cn 的 API Key 管理页创建，形如 sk-…",
+        "key_hint": tr("在 platform.moonshot.cn 的 API Key 管理页创建，形如 sk-…"),
     },
     "OpenAI": {
         "base_url": "https://api.openai.com/v1",
         "models": ["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini"],
-        "key_hint": "在 platform.openai.com 的 API keys 页面创建，形如 sk-…",
+        "key_hint": tr("在 platform.openai.com 的 API keys 页面创建，形如 sk-…"),
     },
 }
-CUSTOM_VENDOR = "自定义（自填 Base URL 与模型名）"
+CUSTOM_VENDOR = tr("自定义（自填 Base URL 与模型名）")
 
 
 def _guess_vendor(base_url: str) -> str:
@@ -65,7 +66,7 @@ def load_ai_settings() -> AISettings:
     except Exception:
         api_key = ""
     return AISettings(
-        base_url=stored.value("ai/base_url", VENDOR_PRESETS["DeepSeek（深度求索）"]["base_url"]),
+        base_url=stored.value("ai/base_url", VENDOR_PRESETS[tr("DeepSeek（深度求索）")]["base_url"]),
         model=stored.value("ai/model", ""),
         api_key=api_key,
         temperature=float(stored.value("ai/temperature", 0.2)),
@@ -76,7 +77,7 @@ def load_ai_settings() -> AISettings:
 class AISettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("AI 模型设置")
+        self.setWindowTitle(tr("AI 模型设置"))
         self.setMinimumWidth(520)
         settings = load_ai_settings()
 
@@ -85,7 +86,7 @@ class AISettingsDialog(QDialog):
         self.vendor.setCurrentText(_guess_vendor(settings.base_url))
 
         self.base_url = QLineEdit(settings.base_url)
-        self.base_url.setPlaceholderText("例如：https://api.deepseek.com/v1")
+        self.base_url.setPlaceholderText(tr("例如：https://api.deepseek.com/v1"))
         self.model = QComboBox()
         self.model.setEditable(True)
         self.model.setInsertPolicy(QComboBox.NoInsert)
@@ -95,7 +96,7 @@ class AISettingsDialog(QDialog):
 
         self.api_key = QLineEdit(settings.api_key)
         self.api_key.setEchoMode(QLineEdit.Password)
-        self.api_key.setPlaceholderText("仅保存在本机，不写入源码，也不随文件分发")
+        self.api_key.setPlaceholderText(tr("仅保存在本机，不写入源码，也不随文件分发"))
         self.key_hint = QLabel("")
         self.key_hint.setWordWrap(True)
         self.key_hint.setStyleSheet("color:#607d8b;")
@@ -110,22 +111,21 @@ class AISettingsDialog(QDialog):
         self.timeout.setValue(settings.timeout_s)
         self.timeout.setSuffix(" s")
         self.timeout.setToolTip(
-            "单次 HTTP 请求的等待上限。推理模型思考时间较长时调大一些；"
-            f"遇到“请求超时”先试 {int(DEFAULT_TIMEOUT_S)} s 以上。")
+            tf('单次 HTTP 请求的等待上限。推理模型思考时间较长时调大一些；遇到“请求超时”先试 {_v0} s 以上。', _v0=(int(DEFAULT_TIMEOUT_S))))
 
         # 这里不再提供“是否用钥匙串保存”的勾选框：不勾就存不下 Key，
         # 用户只能反复重填。改为固定声明 Key 的保存方式与用途。
         self.key_store_note = QLabel(
-            "API Key 由 Windows 系统钥匙串（凭据管理器）加密保存，仅存在本机，"
-            "不写入配置文件、不写入日志、也不随本程序分发。"
+            tr("API Key 由 Windows 系统钥匙串（凭据管理器）加密保存，仅存在本机，"
+            "不写入配置文件、不写入日志、也不随本程序分发。")
         )
         self.key_store_note.setWordWrap(True)
         self.key_store_note.setStyleSheet("color:#455a64;")
 
         self.privacy_note = QLabel(
-            "WAV Analyzer 不会向任何人透露 API Key。"
+            tr("WAV Analyzer 不会向任何人透露 API Key。"
             "Key 只在与你填写的 Base URL 通信时放入请求头，"
-            "其它任何网络请求都不会携带它；导出的 TXT、CSV、图片与报告也不含 Key。"
+            "其它任何网络请求都不会携带它；导出的 TXT、CSV、图片与报告也不含 Key。")
         )
         self.privacy_note.setWordWrap(True)
         self.privacy_note.setStyleSheet(
@@ -133,26 +133,26 @@ class AISettingsDialog(QDialog):
             "border-radius:4px;padding:7px;")
 
         self.vendor_note = QLabel(
-            "选择预设厂商后，Base URL 与模型名会自动填好，只需填写 API Key；"
-            "选择“自定义”则三项都要自己填。模型名可手动改写为厂家的其它模型。"
+            tr("选择预设厂商后，Base URL 与模型名会自动填好，只需填写 API Key；"
+            "选择“自定义”则三项都要自己填。模型名可手动改写为厂家的其它模型。")
         )
         self.vendor_note.setWordWrap(True)
         self.vendor_note.setStyleSheet("color:#455a64;")
 
         form = QFormLayout()
-        form.addRow("厂商预设", self.vendor)
+        form.addRow(tr("厂商预设"), self.vendor)
         form.addRow("Base URL", self.base_url)
-        form.addRow("模型名称", self.model)
+        form.addRow(tr("模型名称"), self.model)
         form.addRow("API Key", self.api_key)
         form.addRow("", self.key_hint)
-        form.addRow("温度", self.temperature)
-        form.addRow("超时", self.timeout)
+        form.addRow(tr("温度"), self.temperature)
+        form.addRow(tr("超时"), self.timeout)
 
-        test_button = QPushButton("测试连接")
+        test_button = QPushButton(tr("测试连接"))
         test_button.clicked.connect(self.test_connection)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        buttons.button(QDialogButtonBox.Save).setText("保存")
-        buttons.button(QDialogButtonBox.Cancel).setText("取消")
+        buttons.button(QDialogButtonBox.Save).setText(tr("保存"))
+        buttons.button(QDialogButtonBox.Cancel).setText(tr("取消"))
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         row = QHBoxLayout()
@@ -176,7 +176,7 @@ class AISettingsDialog(QDialog):
         if preset is None:
             self.base_url.setReadOnly(False)
             self.base_url.setStyleSheet("")
-            self.key_hint.setText("自定义服务需兼容 OpenAI 的 /chat/completions 与 /models 接口。")
+            self.key_hint.setText(tr("自定义服务需兼容 OpenAI 的 /chat/completions 与 /models 接口。"))
             return
         self.base_url.setText(preset["base_url"])
         self.base_url.setReadOnly(True)
@@ -203,9 +203,9 @@ class AISettingsDialog(QDialog):
         try:
             client = OpenAICompatibleClient(self.settings())
             message = client.test_connection()
-            QMessageBox.information(self, "连接测试", message)
+            QMessageBox.information(self, tr("连接测试"), message)
         except Exception as exc:
-            QMessageBox.warning(self, "连接失败", f"{exc}\n\n请依次检查：API Key 是否正确、Base URL 是否可用、模型名是否存在。")
+            QMessageBox.warning(self, tr("连接失败"), tf('{exc}\n\n请依次检查：API Key 是否正确、Base URL 是否可用、模型名是否存在。', exc=(exc)))
         finally:
             if client:
                 client.close()
@@ -214,12 +214,12 @@ class AISettingsDialog(QDialog):
         base_url = self.base_url.text().strip()
         model = self.model.currentText().strip()
         if not base_url or not model:
-            QMessageBox.warning(self, "设置不完整", "Base URL 和模型名称不能为空。")
+            QMessageBox.warning(self, tr("设置不完整"), tr("Base URL 和模型名称不能为空。"))
             return
         if not self.api_key.text().strip():
             answer = QMessageBox.question(
-                self, "未填写 API Key",
-                "当前未填写 API Key，AI 助手调用会被服务端拒绝。是否仍然保存？",
+                self, tr("未填写 API Key"),
+                tr("当前未填写 API Key，AI 助手调用会被服务端拒绝。是否仍然保存？"),
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
             )
             if answer != QMessageBox.Yes:
@@ -240,7 +240,7 @@ class AISettingsDialog(QDialog):
             elif keyring.get_password(SERVICE_NAME, "default"):
                 keyring.delete_password(SERVICE_NAME, "default")
         except Exception as exc:
-            key_note = f"\n\n⚠ Key 未能写入 Windows 钥匙串：{exc}\n下次启动需要重新填写。"
+            key_note = tf('\n\n⚠ Key 未能写入 Windows 钥匙串：{exc}\n下次启动需要重新填写。', exc=(exc))
         if key_note:
-            QMessageBox.warning(self, "钥匙串不可用", "其余设置已保存。" + key_note)
+            QMessageBox.warning(self, tr("钥匙串不可用"), tr("其余设置已保存。") + key_note)
         super().accept()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.i18n import tf, tr
 from dataclasses import dataclass
 
 import numpy as np
@@ -93,9 +94,9 @@ def fourier_analysis(
     x_all = np.asarray(samples, dtype=np.float64).reshape(-1)
     total_samples = len(x_all)
     if total_samples < 2 or sample_rate <= 0:
-        raise ValueError("傅立叶分析至少需要两个采样点和正采样率")
+        raise ValueError(tr("傅立叶分析至少需要两个采样点和正采样率"))
     if not np.isfinite(x_all).all():
-        raise ValueError("傅立叶分析输入包含 NaN 或无穷值")
+        raise ValueError(tr("傅立叶分析输入包含 NaN 或无穷值"))
 
     # 长音频保护：只取居中的连续窗口参与 FFT。窗口内保留原始采样率，
     # 因此频率轴物理意义不变；界面会标注实际分析的时间范围。
@@ -115,10 +116,10 @@ def fourier_analysis(
     try:
         window_values = signal.get_window(window, len(x), fftbins=True)
     except Exception as exc:
-        raise ValueError(f"不支持的窗函数：{window}") from exc
+        raise ValueError(tf('不支持的窗函数：{window}', window=(window))) from exc
     coherent_gain = float(np.sum(window_values))
     if coherent_gain <= 0:
-        raise ValueError("窗函数的相干增益无效")
+        raise ValueError(tr("窗函数的相干增益无效"))
     transformed = np.fft.rfft(x * window_values, n=n_fft)
     frequencies = np.fft.rfftfreq(n_fft, d=1.0 / sample_rate)
     amplitude = np.abs(transformed) / coherent_gain
@@ -163,7 +164,7 @@ def stft_spectrogram(
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     x = np.asarray(samples, dtype=np.float64).reshape(-1)
     if len(x) < 2:
-        raise ValueError("时频分析数据过短")
+        raise ValueError(tr("时频分析数据过短"))
     nperseg = int(np.clip(nperseg, 16, len(x)))
     noverlap = nperseg // 2 if noverlap is None else int(np.clip(noverlap, 0, nperseg - 1))
     hop = max(1, nperseg - noverlap)

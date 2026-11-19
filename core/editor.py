@@ -1,6 +1,7 @@
 """非破坏性编辑的纯逻辑：裁剪、写回源文件。所有函数不依赖 Qt，便于测试。"""
 from __future__ import annotations
 
+from core.i18n import tf, tr
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -34,13 +35,13 @@ def trim_range(
 ) -> TrimResult:
     """按时间区间裁剪工作数据，返回新数组（不修改输入）。"""
     if sample_rate <= 0:
-        raise ValueError("采样率无效")
+        raise ValueError(tr("采样率无效"))
     data = np.asarray(samples, dtype=np.float64)
     if data.ndim != 2:
-        raise ValueError("音频数据必须是 [采样点, 声道] 二维数组")
+        raise ValueError(tr("音频数据必须是 [采样点, 声道] 二维数组"))
     mask = np.asarray(valid_mask, dtype=bool)
     if mask.shape != data.shape:
-        raise ValueError("有效区间掩码形状与音频不一致")
+        raise ValueError(tr("有效区间掩码形状与音频不一致"))
 
     total = data.shape[0]
     start = int(round(max(0.0, float(start_seconds)) * sample_rate))
@@ -48,7 +49,7 @@ def trim_range(
     start = max(0, min(start, total))
     end = max(0, min(end, total))
     if end - start < 2:
-        raise ValueError("裁剪区间太短，至少需要 2 个采样点")
+        raise ValueError(tr("裁剪区间太短，至少需要 2 个采样点"))
 
     return TrimResult(
         samples=data[start:end].copy(),
@@ -76,12 +77,12 @@ def apply_to_source(source: Path, samples: np.ndarray, sample_rate: int, subtype
     """把工作数据写回源 WAV，先做同目录备份。返回备份文件路径。"""
     source = Path(source)
     if not source.is_file():
-        raise FileNotFoundError(f"源文件不存在：{source}")
+        raise FileNotFoundError(tf('源文件不存在：{source}', source=(source)))
     data = np.asarray(samples, dtype=np.float64)
     if data.size == 0:
-        raise ValueError("没有可写回的数据")
+        raise ValueError(tr("没有可写回的数据"))
     if not np.isfinite(data).all():
-        raise ValueError("数据含 NaN 或无穷值，已取消写回")
+        raise ValueError(tr("数据含 NaN 或无穷值，已取消写回"))
 
     backup = backup_path_for(source)
     backup.write_bytes(source.read_bytes())
@@ -94,4 +95,4 @@ def apply_to_source(source: Path, samples: np.ndarray, sample_rate: int, subtype
 
 def file_format_info(path: Path) -> str:
     info = sf.info(str(path))
-    return f"{info.subtype} / {info.samplerate} Hz / {info.channels} 声道"
+    return tf('{_v0} / {_v1} Hz / {_v2} 声道', _v0=(info.subtype), _v1=(info.samplerate), _v2=(info.channels))

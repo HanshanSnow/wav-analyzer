@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.i18n import tf, tr
 from pathlib import Path
 from typing import Any
 
@@ -103,7 +104,7 @@ def _compute_envelope_fit(
     selected = (times >= start) & (times <= end) & np.asarray(mask, dtype=bool)[i0:i1]
     indices = np.flatnonzero(selected)
     if len(indices) < 2:
-        raise ValueError("选区内有效包络点不足")
+        raise ValueError(tr("选区内有效包络点不足"))
     if len(indices) > max_points:
         indices = indices[np.linspace(0, len(indices) - 1, max_points).astype(int)]
     fit = fit_envelope(times[indices], envelope[indices], model)
@@ -119,7 +120,7 @@ def _compute_envelope_fit(
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("声音实验 WAV 数据处理程序")
+        self.setWindowTitle(tr("声音实验 WAV 数据处理程序"))
         self.resize(1500, 920)
         self.audio: AudioData | None = None
         self.processed: np.ndarray | None = None
@@ -141,7 +142,7 @@ class MainWindow(QMainWindow):
         self.ai_assistant: AIAssistant | None = None
         self.ai_worker: AIWorker | None = None
         self.task: TaskWorker | None = None
-        self._task_title = "处理中"
+        self._task_title = tr("处理中")
         self.last_ai_narrative = ""
         self.dual_result: dict | None = None
         self.edit_log: list[str] = []
@@ -167,7 +168,7 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self.busy = BusyOverlay(self)
         self.batch_overlay = BatchProgressOverlay(self)
-        self.statusBar().showMessage("请打开 WAV 文件；原始文件始终只读")
+        self.statusBar().showMessage(tr("请打开 WAV 文件；原始文件始终只读"))
 
     # ---------------------------------------------------------------- UI 构建
     def _build_ui(self) -> None:
@@ -209,7 +210,7 @@ class MainWindow(QMainWindow):
             return
         combo.blockSignals(True)
         combo.clear()
-        combo.addItem("未校准（只显示 dBFS）", "")
+        combo.addItem(tr("未校准（只显示 dBFS）"), "")
         for item in self._ready_profiles():
             combo.addItem(item.name, item.name)
         index = combo.findData(self.calibration_active)
@@ -221,7 +222,7 @@ class MainWindow(QMainWindow):
         item = self._current_calibration()
         if item is None:
             self.calibration_label.setText(
-                "未校准：统计只显示 dBFS。配好灵敏度或做一次标定后，统计表才会多出声压级两行。")
+                tr("未校准：统计只显示 dBFS。配好灵敏度或做一次标定后，统计表才会多出声压级两行。"))
             return
         offset = item.offset_db()
         self.calibration_label.setText(f"K = {offset:+.2f} dB（dB SPL = dBFS + K）")
@@ -257,11 +258,11 @@ class MainWindow(QMainWindow):
     def _control_panel(self) -> QWidget:
         content = QWidget()
         layout = QVBoxLayout(content)
-        file_group = QGroupBox("文件与声道")
+        file_group = QGroupBox(tr("文件与声道"))
         file_layout = QVBoxLayout(file_group)
-        self.file_label = QLabel("尚未载入文件")
+        self.file_label = QLabel(tr("尚未载入文件"))
         self.file_label.setWordWrap(True)
-        open_button = QPushButton("打开 WAV")
+        open_button = QPushButton(tr("打开 WAV"))
         open_button.clicked.connect(self.open_file)
         self.channel_combo = QComboBox()
         self.channel_combo.currentIndexChanged.connect(self.refresh_all_async)
@@ -269,24 +270,24 @@ class MainWindow(QMainWindow):
         self.fundamental.setRange(0, 1000000)
         self.fundamental.setValue(1000)
         self.fundamental.setSuffix(" Hz")
-        self.fundamental.setSpecialValueText("自动估计")
+        self.fundamental.setSpecialValueText(tr("自动估计"))
         form = QFormLayout()
-        form.addRow("当前声道", self.channel_combo)
-        form.addRow("已知激励频率", self.fundamental)
+        form.addRow(tr("当前声道"), self.channel_combo)
+        form.addRow(tr("已知激励频率"), self.fundamental)
         file_layout.addWidget(self.file_label)
         file_layout.addWidget(open_button)
         file_layout.addLayout(form)
         layout.addWidget(file_group)
 
-        calibration_group = QGroupBox("声学校准")
+        calibration_group = QGroupBox(tr("声学校准"))
         calibration_layout = QVBoxLayout(calibration_group)
         self.calibration_combo = QComboBox()
-        self.calibration_combo.setToolTip("选中的校准用于把 dBFS 换算成 dB SPL；未校准时只显示 dBFS")
+        self.calibration_combo.setToolTip(tr("选中的校准用于把 dBFS 换算成 dB SPL；未校准时只显示 dBFS"))
         # 下拉里放的是配置名，别让它按最长名字把按钮挤掉
         self.calibration_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
         self.calibration_combo.setMinimumContentsLength(10)
         self.calibration_combo.currentIndexChanged.connect(self._on_calibration_changed)
-        calibration_button = QPushButton("校准设置…")
+        calibration_button = QPushButton(tr("校准设置…"))
         calibration_button.setMinimumWidth(96)
         calibration_button.clicked.connect(self.open_calibration_dialog)
         calibration_row = QHBoxLayout()
@@ -299,34 +300,34 @@ class MainWindow(QMainWindow):
         calibration_layout.addWidget(self.calibration_label)
         layout.addWidget(calibration_group)
 
-        batch_group = QGroupBox("批量处理")
+        batch_group = QGroupBox(tr("批量处理"))
         batch_layout = QVBoxLayout(batch_group)
-        batch_note = QLabel("一次处理多个 WAV：先搭步骤脚本，再选文件，后台逐个执行。")
+        batch_note = QLabel(tr("一次处理多个 WAV：先搭步骤脚本，再选文件，后台逐个执行。"))
         batch_note.setWordWrap(True)
         batch_note.setStyleSheet("color: #546e7a;")
-        self.batch_button = QPushButton("批量处理…")
-        self.batch_button.setToolTip("编辑处理步骤 → 选择待处理文件 → 开始处理")
+        self.batch_button = QPushButton(tr("批量处理…"))
+        self.batch_button.setToolTip(tr("编辑处理步骤 → 选择待处理文件 → 开始处理"))
         self.batch_button.clicked.connect(self.open_batch_dialog)
         batch_layout.addWidget(batch_note)
         batch_layout.addWidget(self.batch_button)
         layout.addWidget(batch_group)
 
-        play_group = QGroupBox("播放与编辑")
+        play_group = QGroupBox(tr("播放与编辑"))
         play_layout = QVBoxLayout(play_group)
         self.play_target = QComboBox()
-        self.play_target.addItems(["播放选区", "播放全文件"])
+        self.play_target.addItems([tr("播放选区"), tr("播放全文件")])
         play_row = QHBoxLayout()
-        self.play_button = QPushButton("▶ 播放")
+        self.play_button = QPushButton(tr("▶ 播放"))
         self.play_button.clicked.connect(self.toggle_play)
-        self.stop_button = QPushButton("■ 停止")
+        self.stop_button = QPushButton(tr("■ 停止"))
         self.stop_button.clicked.connect(self.stop_play)
         play_row.addWidget(self.play_button)
         play_row.addWidget(self.stop_button)
-        self.trim_button = QPushButton("裁剪到选区")
+        self.trim_button = QPushButton(tr("裁剪到选区"))
         self.trim_button.clicked.connect(self.trim_to_selection_async)
-        self.writeback_button = QPushButton("应用更改到源文件…")
+        self.writeback_button = QPushButton(tr("应用更改到源文件…"))
         self.writeback_button.clicked.connect(self.apply_changes_to_source)
-        self.edit_label = QLabel("未做编辑")
+        self.edit_label = QLabel(tr("未做编辑"))
         self.edit_label.setWordWrap(True)
         play_layout.addWidget(self.play_target)
         play_layout.addLayout(play_row)
@@ -335,12 +336,12 @@ class MainWindow(QMainWindow):
         play_layout.addWidget(self.edit_label)
         layout.addWidget(play_group)
 
-        view_group = QGroupBox("坐标与分析")
+        view_group = QGroupBox(tr("坐标与分析"))
         view_layout = QVBoxLayout(view_group)
         self.amplitude_scale = QComboBox()
         self.amplitude_scale.addItems(["Linear (AMP)", "dBFS"])
         self.amplitude_scale.currentTextChanged.connect(self.update_spectrum)
-        self.log_frequency = QCheckBox("频率轴使用对数刻度")
+        self.log_frequency = QCheckBox(tr("频率轴使用对数刻度"))
         self.log_frequency.toggled.connect(self.update_spectrum)
         self.probe_time_input = QDoubleSpinBox()
         self.probe_time_input.setDecimals(6)
@@ -348,20 +349,20 @@ class MainWindow(QMainWindow):
         self.probe_time_input.setSuffix(" s")
         self.probe_time_input.setKeyboardTracking(False)
         self.probe_time_input.valueChanged.connect(lambda value: self.cursor.setValue(value))
-        stats_button = QPushButton("计算选区统计")
+        stats_button = QPushButton(tr("计算选区统计"))
         stats_button.clicked.connect(self.calculate_statistics_async)
-        dual_button = QPushButton("双通道时延与电平分析")
+        dual_button = QPushButton(tr("双通道时延与电平分析"))
         dual_button.clicked.connect(self.run_dual_channel_async)
-        view_layout.addWidget(QLabel("频谱幅值刻度"))
+        view_layout.addWidget(QLabel(tr("频谱幅值刻度")))
         view_layout.addWidget(self.amplitude_scale)
         view_layout.addWidget(self.log_frequency)
-        view_layout.addWidget(QLabel("指定时间读数"))
+        view_layout.addWidget(QLabel(tr("指定时间读数")))
         view_layout.addWidget(self.probe_time_input)
         view_layout.addWidget(stats_button)
         view_layout.addWidget(dual_button)
         layout.addWidget(view_group)
 
-        denoise_group = QGroupBox("冲击检测与去噪")
+        denoise_group = QGroupBox(tr("冲击检测与去噪"))
         denoise_layout = QFormLayout(denoise_group)
         self.threshold = QDoubleSpinBox()
         self.threshold.setRange(0.5, 100)
@@ -370,23 +371,23 @@ class MainWindow(QMainWindow):
         self.max_repair.setRange(0.1, 100)
         self.max_repair.setValue(3.0)
         self.max_repair.setSuffix(" ms")
-        denoise_layout.addRow("稳健阈值", self.threshold)
-        denoise_layout.addRow("最长修复", self.max_repair)
-        preview_button = QPushButton("检测并预览")
+        denoise_layout.addRow(tr("稳健阈值"), self.threshold)
+        denoise_layout.addRow(tr("最长修复"), self.max_repair)
+        preview_button = QPushButton(tr("检测并预览"))
         preview_button.clicked.connect(self.preview_denoise_async)
-        self.apply_button = QPushButton("应用预览")
+        self.apply_button = QPushButton(tr("应用预览"))
         self.apply_button.clicked.connect(self.apply_denoise_async)
         self.apply_button.setEnabled(False)
-        self.close_preview_button = QPushButton("关闭预览")
-        self.close_preview_button.setToolTip("清除橙色预览曲线与待应用结果，处理数据不受影响")
+        self.close_preview_button = QPushButton(tr("关闭预览"))
+        self.close_preview_button.setToolTip(tr("清除橙色预览曲线与待应用结果，处理数据不受影响"))
         self.close_preview_button.clicked.connect(self.close_denoise_preview)
         self.close_preview_button.setEnabled(False)
         preview_actions = QHBoxLayout()
         preview_actions.addWidget(self.apply_button)
         preview_actions.addWidget(self.close_preview_button)
-        undo_button = QPushButton("撤销上次处理")
+        undo_button = QPushButton(tr("撤销上次处理"))
         undo_button.clicked.connect(self.undo_async)
-        self.denoise_label = QLabel("尚未检测")
+        self.denoise_label = QLabel(tr("尚未检测"))
         self.denoise_label.setWordWrap(True)
         denoise_layout.addRow(preview_button)
         denoise_layout.addRow(preview_actions)
@@ -394,27 +395,27 @@ class MainWindow(QMainWindow):
         denoise_layout.addRow(self.denoise_label)
         layout.addWidget(denoise_group)
 
-        envelope_group = QGroupBox("包络分析")
+        envelope_group = QGroupBox(tr("包络分析"))
         envelope_layout = QVBoxLayout(envelope_group)
         self.envelope_model = QComboBox()
         self.envelope_model.addItems(["auto", "constant", "linear", "exponential"])
-        envelope_button = QPushButton("显示包络并拟合选区")
+        envelope_button = QPushButton(tr("显示包络并拟合选区"))
         envelope_button.clicked.connect(self.fit_current_envelope_async)
-        self.envelope_label = QLabel("未拟合")
+        self.envelope_label = QLabel(tr("未拟合"))
         self.envelope_label.setWordWrap(True)
         envelope_layout.addWidget(self.envelope_model)
         envelope_layout.addWidget(envelope_button)
         envelope_layout.addWidget(self.envelope_label)
         layout.addWidget(envelope_group)
 
-        export_group = QGroupBox("导出")
+        export_group = QGroupBox(tr("导出"))
         export_layout = QVBoxLayout(export_group)
         for text, handler in [
-            ("导出处理后 WAV", self.export_processed_async),
-            ("导出分析 TXT…", self.export_analysis_txt),
-            ("导出图像 PNG…", self.export_image),
-            ("导出当前统计 CSV", self.export_statistics),
-            ("生成独立 HTML 报告", self.export_report_async),
+            (tr("导出处理后 WAV"), self.export_processed_async),
+            (tr("导出分析 TXT…"), self.export_analysis_txt),
+            (tr("导出图像 PNG…"), self.export_image),
+            (tr("导出当前统计 CSV"), self.export_statistics),
+            (tr("生成独立 HTML 报告"), self.export_report_async),
         ]:
             button = QPushButton(text)
             button.clicked.connect(handler)
@@ -440,14 +441,14 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.wave_plot = pg.PlotWidget()
         self.wave_plot.showGrid(x=True, y=True, alpha=0.25)
-        self.wave_plot.setLabel("bottom", "时间", units="s")
-        self.wave_plot.setLabel("left", "幅值", units="FS")
+        self.wave_plot.setLabel("bottom", tr("时间"), units="s")
+        self.wave_plot.setLabel("left", tr("幅值"), units="FS")
         self.wave_plot.addLegend(offset=(10, 10))
-        self.original_curve = self._curve("#90a4ae", name="原始")
-        self.wave_curve = self._curve("#1565c0", name="当前")
-        self.preview_curve = self._curve("#ef6c00", name="去噪预览")
-        self.envelope_curve = self._curve("#2e7d32", width=2, name="包络")
-        self.fit_curve = self._curve("#c2185b", width=2, name="拟合")
+        self.original_curve = self._curve("#90a4ae", name=tr("原始"))
+        self.wave_curve = self._curve("#1565c0", name=tr("当前"))
+        self.preview_curve = self._curve("#ef6c00", name=tr("去噪预览"))
+        self.envelope_curve = self._curve("#2e7d32", width=2, name=tr("包络"))
+        self.fit_curve = self._curve("#c2185b", width=2, name=tr("拟合"))
         self.fit_curve.setPen(pg.mkPen("#c2185b", width=2, style=Qt.DashLine))
         for curve in [self.original_curve, self.wave_curve, self.preview_curve,
                       self.envelope_curve, self.fit_curve]:
@@ -466,85 +467,85 @@ class MainWindow(QMainWindow):
         self.play_line.setVisible(False)
         self.wave_plot.addItem(self.play_line)
         self.wave_plot.getViewBox().sigXRangeChanged.connect(self._queue_wave_refresh)
-        self.probe_label = QLabel("移动紫色游标读取指定时间的数据；蓝色区域用于统计、裁剪和包络拟合。")
+        self.probe_label = QLabel(tr("移动紫色游标读取指定时间的数据；蓝色区域用于统计、裁剪和包络拟合。"))
         self.probe_label.setWordWrap(True)
         wave_page = QWidget()
         wave_layout = QVBoxLayout(wave_page)
         wave_layout.addWidget(self.wave_plot)
         wave_layout.addWidget(self.probe_label)
-        self.tabs.addTab(wave_page, "波形与选区")
+        self.tabs.addTab(wave_page, tr("波形与选区"))
 
         fourier_page = QWidget()
         fourier_layout = QVBoxLayout(fourier_page)
         plots = QSplitter(Qt.Vertical)
         self.spectrum_plot = pg.PlotWidget()
         self.spectrum_plot.showGrid(x=True, y=True, alpha=0.25)
-        self.spectrum_plot.setLabel("bottom", "频率", units="Hz")
+        self.spectrum_plot.setLabel("bottom", tr("频率"), units="Hz")
         self.spectrum_curve = self._curve("#00838f")
         self.spectrum_plot.addItem(self.spectrum_curve)
         self.phase_plot = pg.PlotWidget()
         self.phase_plot.showGrid(x=True, y=True, alpha=0.25)
-        self.phase_plot.setLabel("bottom", "频率", units="Hz")
-        self.phase_plot.setLabel("left", "相位", units="rad")
+        self.phase_plot.setLabel("bottom", tr("频率"), units="Hz")
+        self.phase_plot.setLabel("left", tr("相位"), units="rad")
         self.phase_curve = self._curve("#8e24aa")
         self.phase_plot.addItem(self.phase_curve)
         plots.addWidget(self.spectrum_plot)
         plots.addWidget(self.phase_plot)
         fourier_layout.addWidget(plots, 3)
-        self.fourier_summary = QLabel("傅立叶分析：未载入数据")
+        self.fourier_summary = QLabel(tr("傅立叶分析：未载入数据"))
         self.fourier_summary.setWordWrap(True)
         fourier_layout.addWidget(self.fourier_summary)
         result_tables = QTabWidget()
-        self.peak_table = self._table(["频率 / Hz", "峰值振幅", "dBFS", "相位 / rad"])
-        self.harmonic_table = self._table(["次数", "频率 / Hz", "峰值振幅", "dBFS", "相位 / rad"])
-        result_tables.addTab(self.peak_table, "主要谱峰")
-        result_tables.addTab(self.harmonic_table, "谐波")
+        self.peak_table = self._table([tr("频率 / Hz"), tr("峰值振幅"), "dBFS", tr("相位 / rad")])
+        self.harmonic_table = self._table([tr("次数"), tr("频率 / Hz"), tr("峰值振幅"), "dBFS", tr("相位 / rad")])
+        result_tables.addTab(self.peak_table, tr("主要谱峰"))
+        result_tables.addTab(self.harmonic_table, tr("谐波"))
         fourier_layout.addWidget(result_tables, 2)
-        self.tabs.addTab(fourier_page, "傅立叶分析")
+        self.tabs.addTab(fourier_page, tr("傅立叶分析"))
 
         self.spectro_plot = pg.PlotWidget()
-        self.spectro_plot.setLabel("bottom", "时间", units="s")
-        self.spectro_plot.setLabel("left", "频率", units="Hz")
+        self.spectro_plot.setLabel("bottom", tr("时间"), units="s")
+        self.spectro_plot.setLabel("left", tr("频率"), units="Hz")
         self.spectro_image = pg.ImageItem()
         self.spectro_plot.addItem(self.spectro_image)
         self.colorbar = pg.ColorBarItem(colorMap=pg.colormap.get("viridis"))
         self.colorbar.setImageItem(self.spectro_image, insert_in=self.spectro_plot.getPlotItem())
         self.colorbar.setLevels((-100, 0))
-        self.tabs.addTab(self.spectro_plot, "时频图")
+        self.tabs.addTab(self.spectro_plot, tr("时频图"))
 
         stats_page = QWidget()
         stats_layout = QVBoxLayout(stats_page)
         stats_hint = QLabel(
-            "单位 FS 指数字满幅（±1.0 为满量程）；dBFS 是相对满幅的分贝值，不是声压级 dB SPL。"
-            "RMS/峰值/标准差基于选区全部有效采样点，主频与 THD 基于居中 FFT 窗口（见“计算口径说明”一行）。"
+            tr("单位 FS 指数字满幅（±1.0 为满量程）；dBFS 是相对满幅的分贝值，不是声压级 dB SPL。"
+            "RMS/峰值/标准差基于选区全部有效采样点，主频与 THD 基于居中 FFT 窗口（见“计算口径说明”一行）。")
         )
         stats_hint.setWordWrap(True)
         stats_hint.setStyleSheet("color:#455a64;")
-        self.stats_table = self._table(["统计量", "数值", "含义与取值说明"])
+        self.stats_table = self._table([tr("统计量"), tr("数值"), tr("含义与取值说明")])
         self.stats_table.setWordWrap(True)
         self.stats_table.setColumnWidth(0, 190)
         self.stats_table.setColumnWidth(1, 120)
         stats_layout.addWidget(stats_hint)
         stats_layout.addWidget(self.stats_table, 1)
-        self.tabs.addTab(stats_page, "区间统计")
+        self.tabs.addTab(stats_page, tr("区间统计"))
         return self.tabs
 
     def _build_ai_dock(self) -> None:
-        dock = QDockWidget("AI 数据助手", self)
+        dock = QDockWidget(tr("AI 数据助手"), self)
         dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
         page = QWidget()
         layout = QVBoxLayout(page)
-        settings_button = QPushButton("模型设置")
+        settings_button = QPushButton(tr("模型设置"))
         settings_button.clicked.connect(self.configure_ai)
         self.chat_view = ChatView()
         self.chat_view.add_welcome()
         self.chat_input = QLineEdit()
-        self.chat_input.setPlaceholderText("例如：分析当前数据，检测冲击并给出处理建议")
+        self.chat_input.setPlaceholderText(tr("例如：分析当前数据，检测冲击并给出处理建议"))
         self.chat_input.returnPressed.connect(self.send_ai_message)
-        self.send_button = QPushButton("发送")
+        self.send_button = QPushButton(tr("发送"))
         self.send_button.clicked.connect(self.send_ai_message)
-        report_button = QPushButton("让 AI 总结当前处理并撰写说明")
-        report_button.clicked.connect(lambda: self.send_ai_message("请调用所需工具分析当前数据，说明处理依据、结果和限制，供数据处理报告使用。"))
+        report_button = QPushButton(tr("让 AI 总结当前处理并撰写说明"))
+        report_button.clicked.connect(lambda: self.send_ai_message(tr("请调用所需工具分析当前数据，说明处理依据、结果和限制，供数据处理报告使用。")))
         row = QHBoxLayout()
         row.addWidget(self.chat_input)
         row.addWidget(self.send_button)
@@ -605,12 +606,12 @@ class MainWindow(QMainWindow):
         try:
             handler(result)
         except Exception as exc:
-            QMessageBox.warning(self, "处理结果失败", str(exc))
+            QMessageBox.warning(self, tr("处理结果失败"), str(exc))
 
     def _task_failed(self, message: str) -> None:
         self._task_handler = None
         self.busy.stop()
-        QMessageBox.warning(self, "处理失败", message)
+        QMessageBox.warning(self, tr("处理失败"), message)
 
     def _task_finished(self, worker: TaskWorker | None = None) -> None:
         if self.task is worker:
@@ -628,7 +629,7 @@ class MainWindow(QMainWindow):
     # ---------------------------------------------------------------- 数据访问
     def _require_audio(self) -> bool:
         if self.audio is None:
-            QMessageBox.information(self, "请先打开文件", "请先打开一个 WAV 文件。")
+            QMessageBox.information(self, tr("请先打开文件"), tr("请先打开一个 WAV 文件。"))
             return False
         return True
 
@@ -640,12 +641,12 @@ class MainWindow(QMainWindow):
 
     def current_samples(self) -> np.ndarray:
         if self.processed is None:
-            raise ValueError("尚未载入音频")
+            raise ValueError(tr("尚未载入音频"))
         return self.processed[:, self.channel_combo.currentIndex()]
 
     def current_valid_mask(self) -> np.ndarray:
         if self.valid_mask is None:
-            raise ValueError("尚未载入音频")
+            raise ValueError(tr("尚未载入音频"))
         return self.valid_mask[:, self.channel_combo.currentIndex()]
 
     def current_reference(self) -> np.ndarray | None:
@@ -655,7 +656,7 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------------- 载入
     def open_file(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "打开 WAV", "", "WAV 音频 (*.wav)")
+        path, _ = QFileDialog.getOpenFileName(self, tr("打开 WAV"), "", tr("WAV 音频 (*.wav)"))
         if path:
             self.load_audio_async(path)
 
@@ -676,8 +677,8 @@ class MainWindow(QMainWindow):
             return analysis
 
         self.run_task(
-            "正在读取并分析 WAV…", work, self._apply_loaded,
-            hint=f"{source.name}；长文件可能需要数秒",
+            tr("正在读取并分析 WAV…"), work, self._apply_loaded,
+            hint=tf('{_v0}；长文件可能需要数秒', _v0=(source.name)),
         )
 
     def load_audio(self, path: str | Path) -> None:
@@ -720,15 +721,14 @@ class MainWindow(QMainWindow):
 
         self.channel_combo.blockSignals(True)
         self.channel_combo.clear()
-        self.channel_combo.addItems([f"声道 {i + 1}" for i in range(audio.channels)])
+        self.channel_combo.addItems([tf('声道 {_v0}', _v0=(i + 1)) for i in range(audio.channels)])
         self.channel_combo.setCurrentIndex(0)
         self.channel_combo.blockSignals(False)
 
         quality = payload["quality"][0]
         self.file_label.setText(
-            f"{audio.source_path.name}\n{audio.duration:.3f} s | {audio.sample_rate} Hz | "
-            f"{audio.channels} 声道 | {audio.subtype}\n峰值 {quality['peak']:.4f}，RMS {quality['rms']:.4f}"
-            + ("\n警告：可能存在削顶" if quality["clipping_warning"] else "")
+            tf('{_v0}\n{_v1:.3f} s | {_v2} Hz | {_v3} 声道 | {_v4}\n峰值 {_v5:.4f}，RMS {_v6:.4f}', _v0=(audio.source_path.name), _v1=(audio.duration), _v2=(audio.sample_rate), _v3=(audio.channels), _v4=(audio.subtype), _v5=(quality['peak']), _v6=(quality['rms']))
+            + (tr("\n警告：可能存在削顶") if quality["clipping_warning"] else "")
         )
         self.preview_curve.clear()
         self.envelope_curve.clear()
@@ -742,8 +742,7 @@ class MainWindow(QMainWindow):
         self._render_wave()
         self._update_edit_label()
         self.statusBar().showMessage(
-            f"已载入 {audio.source_path}｜{audio.duration:.1f} s / {audio.sample_rate} Hz；"
-            "主频与 THD 基于受限窗口（详见傅立叶分析页），统计量使用完整选区。", 8000)
+            tf('已载入 {_v0}｜{_v1:.1f} s / {_v2} Hz；主频与 THD 基于受限窗口（详见傅立叶分析页），统计量使用完整选区。', _v0=(audio.source_path), _v1=(audio.duration), _v2=(audio.sample_rate)), 8000)
 
     def _reset_time_axis(self, duration: float) -> None:
         self.region.setRegion([0, duration])
@@ -767,11 +766,11 @@ class MainWindow(QMainWindow):
         calibration = self._current_calibration()
         start_s, end_s = self.region.getRegion()
         return self.run_task(
-            "正在重新分析当前声道…",
+            tr("正在重新分析当前声道…"),
             lambda: _analyze_channel(samples, sample_rate, fundamental, mask, start_s, end_s,
                                      calibration),
             self._apply_analysis,
-            hint="傅立叶谱、时频图与统计量",
+            hint=tr("傅立叶谱、时频图与统计量"),
         )
 
     def refresh_all(self) -> None:
@@ -883,23 +882,17 @@ class MainWindow(QMainWindow):
         log_x = self.log_frequency.isChecked()
         self.spectrum_plot.setLogMode(x=log_x, y=False)
         self.phase_plot.setLogMode(x=log_x, y=False)
-        self.spectrum_plot.setLabel("left", "幅值", units="dBFS" if is_db else "FS")
+        self.spectrum_plot.setLabel("left", tr("幅值"), units="dBFS" if is_db else "FS")
         if not log_x:
             self.spectrum_plot.setXRange(0, self.audio.sample_rate / 2, padding=0)
         scope = ""
         if getattr(result, "analyzed_samples", 0) and getattr(result, "total_samples", 0):
             if result.analyzed_samples < result.total_samples:
                 scope = (
-                    f" 分析窗口 {result.analysis_offset:.3f}–"
-                    f"{result.analysis_offset + result.analyzed_samples / self.audio.sample_rate:.3f} s"
-                    f"（{result.analyzed_samples:,}/{result.total_samples:,} 点，频率分辨率 "
-                    f"{self.audio.sample_rate / result.n_fft:.4g} Hz）。"
-                    " 主频/THD 仅基于该窗口；RMS 等统计量使用完整选区。"
+                    tf(' 分析窗口 {_v0:.3f}–{_v1:.3f} s（{_v2:,}/{_v3:,} 点，频率分辨率 {_v4:.4g} Hz）。 主频/THD 仅基于该窗口；RMS 等统计量使用完整选区。', _v0=(result.analysis_offset), _v1=(result.analysis_offset + result.analyzed_samples / self.audio.sample_rate), _v2=(result.analyzed_samples), _v3=(result.total_samples), _v4=(self.audio.sample_rate / result.n_fft))
                 )
         self.fourier_summary.setText(
-            f"主频 {result.main_frequency:.4f} Hz；主频峰值振幅 {result.main_amplitude:.6g} FS；"
-            f"THD {result.thd:.4%}；窗函数 {result.window}；FFT 点数 {result.n_fft}。"
-            f"{scope} dBFS 不等于 dB SPL。"
+            tf('主频 {_v0:.4f} Hz；主频峰值振幅 {_v1:.6g} FS；THD {_v2:.4%}；窗函数 {_v3}；FFT 点数 {_v4}。{scope} dBFS 不等于 dB SPL。', _v0=(result.main_frequency), _v1=(result.main_amplitude), _v2=(result.thd), _v3=(result.window), _v4=(result.n_fft), scope=(scope))
         )
         self._fill_table(self.peak_table, [[p["frequency_hz"], p["amplitude"], p["amplitude_dbfs"], p["phase_rad"]] for p in result.peaks()])
         self._fill_table(self.harmonic_table, [[h["order"], h["frequency_hz"], h["amplitude"], h["amplitude_dbfs"], h["phase_rad"]] for h in result.harmonics()])
@@ -961,7 +954,7 @@ class MainWindow(QMainWindow):
             )
             self._fill_statistics_table(self.statistics)
         except Exception as exc:
-            QMessageBox.warning(self, "统计失败", str(exc))
+            QMessageBox.warning(self, tr("统计失败"), str(exc))
 
     def calculate_statistics_async(self) -> None:
         if not self._require_audio() or self.busy_running():
@@ -981,9 +974,9 @@ class MainWindow(QMainWindow):
             self.statistics = stats
             self._fill_statistics_table(stats)
             self.tabs.setCurrentIndex(3)
-            self.statusBar().showMessage("选区统计已更新", 4000)
+            self.statusBar().showMessage(tr("选区统计已更新"), 4000)
 
-        self.run_task("正在计算选区统计…", work, done, hint=f"{start:.3f}–{end:.3f} s")
+        self.run_task(tr("正在计算选区统计…"), work, done, hint=f"{start:.3f}–{end:.3f} s")
 
     def _queue_probe(self, *_args) -> None:
         self._probe_timer.start()
@@ -1027,7 +1020,7 @@ class MainWindow(QMainWindow):
                 samples, sample_rate, threshold, max_repair_ms=max_repair,
                 progress=progress)
             if progress is not None:
-                progress(0.98, "生成预览曲线")
+                progress(0.98, tr("生成预览曲线"))
             times, values = _downsample_series(result.cleaned, sample_rate, columns)
             return result, times, values
 
@@ -1036,8 +1029,8 @@ class MainWindow(QMainWindow):
             self._show_denoise_preview(result, times, values)
 
         self.run_task(
-            "正在检测冲击信号…", work, done,
-            hint="长音频需要数秒，期间请不要关闭窗口",
+            tr("正在检测冲击信号…"), work, done,
+            hint=tr("长音频需要数秒，期间请不要关闭窗口"),
             progress=True,
         )
 
@@ -1048,7 +1041,7 @@ class MainWindow(QMainWindow):
             times, values = _downsample_series(result.cleaned, sample_rate, self._plot_columns())
         self.preview_curve.setData(times, values)
         self.denoise_label.setText(
-            f"检测 {len(result.events)} 段：修复 {result.repaired_count}，排除 {result.excluded_count}。\n"
+            tf('检测 {_v0} 段：修复 {_v1}，排除 {_v2}。\n', _v0=(len(result.events)), _v1=(result.repaired_count), _v2=(result.excluded_count))
             + "\n".join(
                 f"{e.start_sample / sample_rate:.4f}–{e.end_sample / sample_rate:.4f} s"
                 for e in result.events[:8])
@@ -1056,7 +1049,7 @@ class MainWindow(QMainWindow):
         self.apply_button.setEnabled(True)
         self.close_preview_button.setEnabled(True)
         self.statusBar().showMessage(
-            f"预览完成：{len(result.events)} 段冲击（橙色曲线为预览，未写入数据）", 6000)
+            tf('预览完成：{_v0} 段冲击（橙色曲线为预览，未写入数据）', _v0=(len(result.events))), 6000)
 
     def _preview_active(self) -> bool:
         data = self.preview_curve.xData
@@ -1071,8 +1064,8 @@ class MainWindow(QMainWindow):
         self.preview_curve.clear()
         self.apply_button.setEnabled(False)
         self.close_preview_button.setEnabled(False)
-        self.denoise_label.setText("预览已关闭，处理数据未改动" if had_preview else "尚未检测")
-        self.statusBar().showMessage("已关闭去噪预览（橙色曲线），数据未做任何修改", 4000)
+        self.denoise_label.setText(tr("预览已关闭，处理数据未改动") if had_preview else tr("尚未检测"))
+        self.statusBar().showMessage(tr("已关闭去噪预览（橙色曲线），数据未做任何修改"), 4000)
 
     def _push_undo(self, kind: str = "edit") -> None:
         # reference 全程只做整体替换、不原地改写，因此按引用保存即可，
@@ -1119,7 +1112,7 @@ class MainWindow(QMainWindow):
         self.close_preview_button.setEnabled(False)
         self.refresh_all()
         self._update_edit_label()
-        self.statusBar().showMessage("已应用到处理版本；原始 WAV 未修改", 5000)
+        self.statusBar().showMessage(tr("已应用到处理版本；原始 WAV 未修改"), 5000)
 
     def apply_denoise_async(self) -> bool:
         if self.pending_denoise is None or self.audio is None or self.busy_running():
@@ -1144,14 +1137,14 @@ class MainWindow(QMainWindow):
             self.close_preview_button.setEnabled(False)
             self._apply_analysis(payload)
             self._update_edit_label()
-            self.statusBar().showMessage("已应用到处理版本；原始 WAV 未修改", 5000)
+            self.statusBar().showMessage(tr("已应用到处理版本；原始 WAV 未修改"), 5000)
 
-        self.run_task("正在应用去噪结果…", work, done, hint="重新计算频谱与统计量")
+        self.run_task(tr("正在应用去噪结果…"), work, done, hint=tr("重新计算频谱与统计量"))
         return True
 
     def _undo_core(self) -> bool:
         if not self.undo_stack:
-            self.statusBar().showMessage("没有可撤销的处理", 3000)
+            self.statusBar().showMessage(tr("没有可撤销的处理"), 3000)
             return False
         self.processed, self.valid_mask, self.reference, self.edit_depth = self.undo_stack.pop()
         if self.edit_log:
@@ -1169,14 +1162,14 @@ class MainWindow(QMainWindow):
         if not self._undo_core():
             return
         self.refresh_all()
-        self.statusBar().showMessage("已撤销上次处理", 4000)
+        self.statusBar().showMessage(tr("已撤销上次处理"), 4000)
 
     def undo_async(self) -> None:
         if not self._undo_core():
             return
         if not self.refresh_all_async():
             self.refresh_all()
-        self.statusBar().showMessage("已撤销上次处理", 4000)
+        self.statusBar().showMessage(tr("已撤销上次处理"), 4000)
 
     # ---------------------------------------------------------------- 包络
     def _envelope_args(self) -> tuple:
@@ -1207,8 +1200,8 @@ class MainWindow(QMainWindow):
             return payload
 
         self.run_task(
-            "正在计算包络并拟合…", work, self._show_envelope,
-            hint=f"选区 {start:.3f}–{end:.3f} s；长选区需要数秒",
+            tr("正在计算包络并拟合…"), work, self._show_envelope,
+            hint=tf('选区 {start:.3f}–{end:.3f} s；长选区需要数秒', start=(start), end=(end)),
         )
 
     def _show_envelope(self, payload: dict) -> None:
@@ -1228,11 +1221,11 @@ class MainWindow(QMainWindow):
         self.envelope_curve.setData(plot_times, plot_values)
         self.fit_curve.setData(payload["fit_times"], fit.fitted)
         parameters = "，".join(f"{key}={value:.6g}" for key, value in fit.parameters.items())
-        span_text = f"拟合区间 {fit.start_time:.4f}–{fit.end_time:.4f} s"
+        span_text = tf('拟合区间 {_v0:.4f}–{_v1:.4f} s', _v0=(fit.start_time), _v1=(fit.end_time))
         self.envelope_label.setText(
             f"{fit.equation}\n{parameters}\nR²={fit.r_squared:.5f}，RMSE={fit.rmse:.5g}\n{span_text}")
         self.statusBar().showMessage(
-            f"包络已按选区（{span_text}）计算，绿色为包络，酒红色为拟合曲线。", 6000)
+            tf('包络已按选区（{span_text}）计算，绿色为包络，酒红色为拟合曲线。', span_text=(span_text)), 6000)
 
     # ---------------------------------------------------------------- 播放
     def toggle_play(self) -> None:
@@ -1240,14 +1233,14 @@ class MainWindow(QMainWindow):
             return
         if self.player.is_playing:
             self.player.pause()
-            self.play_button.setText("▶ 播放")
+            self.play_button.setText(tr("▶ 播放"))
             return
         if not AudioPlayer.available():
-            QMessageBox.warning(self, "无法播放", "当前系统没有可用的音频输出设备。")
+            QMessageBox.warning(self, tr("无法播放"), tr("当前系统没有可用的音频输出设备。"))
             return
         x = self.current_samples()
         sample_rate = self.audio.sample_rate
-        if self.play_target.currentText() == "播放全文件":
+        if self.play_target.currentText() == tr("播放全文件"):
             start, end = 0.0, self.work_duration
         else:
             start, end = self.region.getRegion()
@@ -1257,17 +1250,17 @@ class MainWindow(QMainWindow):
         try:
             self.player.play(x[i0:i1], sample_rate, self._play_span[0])
         except Exception as exc:
-            QMessageBox.warning(self, "播放失败", str(exc))
+            QMessageBox.warning(self, tr("播放失败"), str(exc))
             return
-        self.play_button.setText("⏸ 暂停")
+        self.play_button.setText(tr("⏸ 暂停"))
         self.play_line.setVisible(True)
         self.play_line.setValue(self._play_span[0])
         self.statusBar().showMessage(
-            f"正在播放 {self._play_span[0]:.3f}–{self._play_span[1]:.3f} s（仅监听，不改动数据）", 4000)
+            tf('正在播放 {_v0:.3f}–{_v1:.3f} s（仅监听，不改动数据）', _v0=(self._play_span[0]), _v1=(self._play_span[1])), 4000)
 
     def stop_play(self) -> None:
         self.player.stop()
-        self.play_button.setText("▶ 播放")
+        self.play_button.setText(tr("▶ 播放"))
         self.play_line.setVisible(False)
 
     def _on_play_position(self, seconds: float) -> None:
@@ -1276,7 +1269,7 @@ class MainWindow(QMainWindow):
 
     def _on_play_state(self, state: str) -> None:
         if state in {"stopped", "paused"}:
-            self.play_button.setText("▶ 播放")
+            self.play_button.setText(tr("▶ 播放"))
         if state == "stopped":
             self.play_line.setVisible(False)
 
@@ -1286,13 +1279,13 @@ class MainWindow(QMainWindow):
         if not self._require_audio() or self.busy_running():
             return None
         if end - start >= self.work_duration - 1e-9:
-            QMessageBox.information(self, "无需裁剪", "当前选区已覆盖整个文件，请先框选需要保留的区间。")
+            QMessageBox.information(self, tr("无需裁剪"), tr("当前选区已覆盖整个文件，请先框选需要保留的区间。"))
             return None
         try:
             result = trim_range(
                 self.processed, self.valid_mask, self.audio.sample_rate, start, end)
         except Exception as exc:
-            QMessageBox.warning(self, "裁剪失败", str(exc))
+            QMessageBox.warning(self, tr("裁剪失败"), str(exc))
             return None
         self._push_undo("trim")
         self.processed = result.samples
@@ -1306,8 +1299,7 @@ class MainWindow(QMainWindow):
         self._reset_time_axis(self.work_duration)
         self._update_edit_label()
         return (
-            f"已裁剪到 {result.start_seconds:.3f}–{result.end_seconds:.3f} s，"
-            f"保留 {result.kept_samples:,} 点；可用“撤销上次处理”还原。"
+            tf('已裁剪到 {_v0:.3f}–{_v1:.3f} s，保留 {_v2:,} 点；可用“撤销上次处理”还原。', _v0=(result.start_seconds), _v1=(result.end_seconds), _v2=(result.kept_samples))
         )
 
     def trim_to_selection(self) -> None:
@@ -1331,16 +1323,14 @@ class MainWindow(QMainWindow):
             return
         source = self.audio.source_path
         if source is None:
-            QMessageBox.information(self, "无源文件", "当前数据不是从文件载入，无法写回。")
+            QMessageBox.information(self, tr("无源文件"), tr("当前数据不是从文件载入，无法写回。"))
             return
         if self.edit_depth == 0:
-            QMessageBox.information(self, "没有改动", "当前处理版本与原始数据一致，无需写回。")
+            QMessageBox.information(self, tr("没有改动"), tr("当前处理版本与原始数据一致，无需写回。"))
             return
         answer = QMessageBox.question(
-            self, "确认写回源文件",
-            f"将把当前处理版本写回：\n{source}\n\n"
-            f"写入长度 {self.work_duration:.3f} s（原文件 {self.audio.duration:.3f} s）。\n"
-            "写回前会自动在同目录生成 .bak-时间戳 备份文件，原始内容不会立即丢失。\n\n是否继续？",
+            self, tr("确认写回源文件"),
+            tf('将把当前处理版本写回：\n{source}\n\n写入长度 {_v1:.3f} s（原文件 {_v2:.3f} s）。\n写回前会自动在同目录生成 .bak-时间戳 备份文件，原始内容不会立即丢失。\n\n是否继续？', source=(source), _v1=(self.work_duration), _v2=(self.audio.duration)),
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
         )
         if answer != QMessageBox.Yes:
@@ -1361,19 +1351,17 @@ class MainWindow(QMainWindow):
             self.edit_depth = 0
             self._update_edit_label()
             QMessageBox.information(
-                self, "已写回源文件",
-                f"已写入：\n{source}\n\n备份文件：\n{backup}")
+                self, tr("已写回源文件"),
+                tf('已写入：\n{source}\n\n备份文件：\n{backup}', source=(source), backup=(backup)))
 
-        self.run_task("正在写回源文件…", work, done, hint="先备份再覆盖，写入可能需要数秒")
+        self.run_task(tr("正在写回源文件…"), work, done, hint=tr("先备份再覆盖，写入可能需要数秒"))
 
     def _update_edit_label(self) -> None:
         if self.edit_depth == 0:
-            self.edit_label.setText("未做编辑")
+            self.edit_label.setText(tr("未做编辑"))
             return
         self.edit_label.setText(
-            f"已应用 {self.edit_depth} 次编辑（去噪/裁剪），"
-            f"当前长度 {self.work_duration:.3f} s；可写回源文件或撤销"
-            f"（可撤销 {len(self.undo_stack)} 级）。")
+            tf('已应用 {_v0} 次编辑（去噪/裁剪），当前长度 {_v1:.3f} s；可写回源文件或撤销（可撤销 {_v2} 级）。', _v0=(self.edit_depth), _v1=(self.work_duration), _v2=(len(self.undo_stack))))
 
     def run_dual_channel(self) -> None:
         if not self._require_audio():
@@ -1381,9 +1369,9 @@ class MainWindow(QMainWindow):
         try:
             current = AudioData(self.processed, self.audio.sample_rate)
             result = analyze_dual_channel(current, self.fundamental.value())
-            QMessageBox.information(self, "双通道分析", "\n".join(f"{key}: {value}" for key, value in result.items()))
+            QMessageBox.information(self, tr("双通道分析"), "\n".join(f"{key}: {value}" for key, value in result.items()))
         except Exception as exc:
-            QMessageBox.warning(self, "双通道分析失败", str(exc))
+            QMessageBox.warning(self, tr("双通道分析失败"), str(exc))
 
     def run_dual_channel_async(self) -> None:
         if not self._require_audio() or self.busy_running():
@@ -1397,26 +1385,26 @@ class MainWindow(QMainWindow):
 
         def done(result: dict):
             self.dual_result = result
-            QMessageBox.information(self, "双通道分析", "\n".join(f"{k}: {v}" for k, v in result.items()))
+            QMessageBox.information(self, tr("双通道分析"), "\n".join(f"{k}: {v}" for k, v in result.items()))
 
-        self.run_task("正在做双通道时延分析…", work, done)
+        self.run_task(tr("正在做双通道时延分析…"), work, done)
 
     # ---------------------------------------------------------------- 导出
     def export_processed(self) -> None:
         if not self._require_audio():
             return
-        path, _ = QFileDialog.getSaveFileName(self, "导出处理后 WAV", "processed.wav", "WAV 音频 (*.wav)")
+        path, _ = QFileDialog.getSaveFileName(self, tr("导出处理后 WAV"), "processed.wav", tr("WAV 音频 (*.wav)"))
         if path:
             try:
                 write_wav(path, self.processed, self.audio.sample_rate)
-                self.statusBar().showMessage(f"已导出 {path}", 5000)
+                self.statusBar().showMessage(tf('已导出 {path}', path=(path)), 5000)
             except Exception as exc:
-                QMessageBox.warning(self, "导出失败", str(exc))
+                QMessageBox.warning(self, tr("导出失败"), str(exc))
 
     def export_processed_async(self) -> None:
         if not self._require_audio() or self.busy_running():
             return
-        path, _ = QFileDialog.getSaveFileName(self, "导出处理后 WAV", "processed.wav", "WAV 音频 (*.wav)")
+        path, _ = QFileDialog.getSaveFileName(self, tr("导出处理后 WAV"), "processed.wav", tr("WAV 音频 (*.wav)"))
         if not path:
             return
         payload = self.processed.copy()
@@ -1426,8 +1414,8 @@ class MainWindow(QMainWindow):
             write_wav(path, payload, sample_rate)
             return path
 
-        self.run_task("正在导出 WAV…", work,
-                      lambda result: self.statusBar().showMessage(f"已导出 {result}", 5000),
+        self.run_task(tr("正在导出 WAV…"), work,
+                      lambda result: self.statusBar().showMessage(tf('已导出 {result}', result=(result)), 5000),
                       hint=Path(path).name)
 
     def export_statistics(self) -> None:
@@ -1437,10 +1425,10 @@ class MainWindow(QMainWindow):
             self.calculate_statistics()
         if self.statistics is None:
             return
-        path, _ = QFileDialog.getSaveFileName(self, "导出统计", "statistics.csv", "CSV (*.csv)")
+        path, _ = QFileDialog.getSaveFileName(self, tr("导出统计"), "statistics.csv", "CSV (*.csv)")
         if path:
             export_rows_csv(path, [self.statistics])
-            self.statusBar().showMessage(f"已导出 {path}", 5000)
+            self.statusBar().showMessage(tf('已导出 {path}', path=(path)), 5000)
 
     def export_report(self) -> None:
         if not self._require_audio():
@@ -1449,7 +1437,7 @@ class MainWindow(QMainWindow):
             self.calculate_statistics()
         if self.statistics is None or self.fourier is None:
             return
-        path, _ = QFileDialog.getSaveFileName(self, "生成独立报告", "wav_analysis_report.html", "HTML 报告 (*.html)")
+        path, _ = QFileDialog.getSaveFileName(self, tr("生成独立报告"), "wav_analysis_report.html", tr("HTML 报告 (*.html)"))
         if path:
             try:
                 content = build_report_html(
@@ -1458,9 +1446,9 @@ class MainWindow(QMainWindow):
                     self.envelope_fit, self.last_denoise, self.last_ai_narrative,
                 )
                 save_report(path, content)
-                self.statusBar().showMessage(f"已生成 {path}", 5000)
+                self.statusBar().showMessage(tf('已生成 {path}', path=(path)), 5000)
             except Exception as exc:
-                QMessageBox.warning(self, "报告生成失败", str(exc))
+                QMessageBox.warning(self, tr("报告生成失败"), str(exc))
 
     def export_report_async(self) -> None:
         if not self._require_audio() or self.busy_running():
@@ -1469,7 +1457,7 @@ class MainWindow(QMainWindow):
             self.calculate_statistics()
         if self.statistics is None or self.fourier is None:
             return
-        path, _ = QFileDialog.getSaveFileName(self, "生成独立报告", "wav_analysis_report.html", "HTML 报告 (*.html)")
+        path, _ = QFileDialog.getSaveFileName(self, tr("生成独立报告"), "wav_analysis_report.html", tr("HTML 报告 (*.html)"))
         if not path:
             return
         arguments = (
@@ -1483,9 +1471,9 @@ class MainWindow(QMainWindow):
             save_report(path, content)
             return path
 
-        self.run_task("正在生成 HTML 报告…", work,
-                      lambda result: self.statusBar().showMessage(f"已生成 {result}", 5000),
-                      hint="包含波形、频谱与统计图表")
+        self.run_task(tr("正在生成 HTML 报告…"), work,
+                      lambda result: self.statusBar().showMessage(tf('已生成 {result}', result=(result)), 5000),
+                      hint=tr("包含波形、频谱与统计图表"))
 
     # ---------------------------------------------------------------- 导出 TXT
     def export_analysis_txt(self) -> None:
@@ -1550,11 +1538,11 @@ class MainWindow(QMainWindow):
 
         source = self.audio.source_path
         payload = {
-            "source_name": source.name if source else "未命名.wav",
+            "source_name": source.name if source else tr("未命名.wav"),
             "source_path": str(source) if source else "",
             "subtype": self.audio.subtype,
             "size_mb": (source.stat().st_size / 1024 / 1024) if source and source.exists() else 0.0,
-            "data_label": "修改后文件（已编辑）" if use_edited else "源文件（未修改）",
+            "data_label": tr("修改后文件（已编辑）") if use_edited else tr("源文件（未修改）"),
             "channels": self.audio.channels,
             "edit_depth": self.edit_depth if use_edited else 0,
             "denoise_edits": self.edit_log.count("denoise") if use_edited else 0,
@@ -1583,11 +1571,10 @@ class MainWindow(QMainWindow):
         def done(result: dict):
             megabytes = result["bytes"] / 1024 / 1024
             self.statusBar().showMessage(
-                f"已导出 {result['path']}（{result['rows']:,} 行，{megabytes:.1f} MB，"
-                f"{len(result['sections'])} 个章节）", 10000)
+                tf('已导出 {_v0}（{_v1:,} 行，{megabytes:.1f} MB，{_v3} 个章节）', _v0=(result['path']), _v1=(result['rows']), megabytes=(megabytes), _v3=(len(result['sections']))), 10000)
 
-        self.run_task("正在导出分析 TXT…", work, done,
-                      hint=f"{len(options.sections)} 个章节，坐标步长 {options.coord_stride(sample_rate)} 点",
+        self.run_task(tr("正在导出分析 TXT…"), work, done,
+                      hint=tf('{_v0} 个章节，坐标步长 {_v1} 点', _v0=(len(options.sections)), _v1=(options.coord_stride(sample_rate))),
                       progress=True)
 
     # ---------------------------------------------------------------- 导出图像
@@ -1604,7 +1591,7 @@ class MainWindow(QMainWindow):
         if not self._require_audio() or self.busy_running():
             return
         if self.fourier is None:
-            self.statusBar().showMessage("分析结果尚未就绪，请稍候再导出", 4000)
+            self.statusBar().showMessage(tr("分析结果尚未就绪，请稍候再导出"), 4000)
             return
         default_kind = self._export_kind_for_tab()
         channel = self.channel_combo.currentIndex()
@@ -1653,16 +1640,16 @@ class MainWindow(QMainWindow):
             def work():
                 return render_waveform_png(path, **payload)
 
-            title = "正在导出波形图 PNG…"
-            hint = f"当前声道 {len(payload['samples']):,} 点，长音频会先抽稀再绘制"
+            title = tr("正在导出波形图 PNG…")
+            hint = tf('当前声道 {_v0:,} 点，长音频会先抽稀再绘制', _v0=(len(payload['samples'])))
         elif kind == KIND_SPECTRUM:
             fourier = self.fourier
 
             def work():
                 return render_spectrum_png(path, fourier, options)
 
-            title = "正在导出频谱图 PNG…"
-            hint = "振幅谱" + ("＋相位谱" if options.show_phase else "")
+            title = tr("正在导出频谱图 PNG…")
+            hint = tr("振幅谱") + (tr("＋相位谱") if options.show_phase else "")
         else:
             if self.spectrogram is None:
                 self.update_spectrogram()
@@ -1671,13 +1658,13 @@ class MainWindow(QMainWindow):
             def work():
                 return render_spectrogram_png(path, spectrogram, options)
 
-            title = "正在导出时频图 PNG…"
-            hint = "重算 dB 色标范围"
+            title = tr("正在导出时频图 PNG…")
+            hint = tr("重算 dB 色标范围")
 
         def done(result: dict):
             size = f"{result['width']}×{result['height']}"
             self.statusBar().showMessage(
-                f"已导出 {result['path']}（{size}，{KIND_LABELS[result['kind']]}）", 9000)
+                tf('已导出 {_v0}（{size}，{_v2}）', _v0=(result['path']), size=(size), _v2=(KIND_LABELS[result['kind']])), 9000)
 
         self.run_task(title, work, done, hint=hint)
 
@@ -1685,10 +1672,10 @@ class MainWindow(QMainWindow):
     def open_batch_dialog(self) -> None:
         """搭脚本 → 选文件 → 交给工作线程执行；界面全程可响应。"""
         if self.batch_worker is not None:
-            self.statusBar().showMessage("批量任务正在进行，请等待结束或点遮罩上的“取消”", 5000)
+            self.statusBar().showMessage(tr("批量任务正在进行，请等待结束或点遮罩上的“取消”"), 5000)
             return
         if self.busy_running():
-            self.statusBar().showMessage("当前已有任务在后台运行，请稍后再试", 5000)
+            self.statusBar().showMessage(tr("当前已有任务在后台运行，请稍后再试"), 5000)
             return
         default_dir = ""
         if self.audio is not None and self.audio.source_path is not None:
@@ -1715,7 +1702,7 @@ class MainWindow(QMainWindow):
         self.batch_button.setEnabled(False)
         self.batch_overlay.start(len(files))
         self.statusBar().showMessage(
-            f"批量处理已开始：{len(files)} 个文件，{len(steps)} 个步骤")
+            tf('批量处理已开始：{_v0} 个文件，{_v1} 个步骤', _v0=(len(files)), _v1=(len(steps))))
         worker.start()
         return True
 
@@ -1723,11 +1710,11 @@ class MainWindow(QMainWindow):
         self.batch_overlay.finish()
         self.batch_button.setEnabled(True)
         lines = result.summary().splitlines()
-        self.statusBar().showMessage(lines[0] if lines else "批量处理结束", 15000)
+        self.statusBar().showMessage(lines[0] if lines else tr("批量处理结束"), 15000)
         box = QMessageBox(self)
-        box.setWindowTitle("批量处理已取消" if result.cancelled else "批量处理完成")
+        box.setWindowTitle(tr("批量处理已取消") if result.cancelled else tr("批量处理完成"))
         box.setIcon(QMessageBox.Information if result.fail_count == 0 else QMessageBox.Warning)
-        box.setText(lines[0] if lines else "批量处理结束")
+        box.setText(lines[0] if lines else tr("批量处理结束"))
         if len(lines) > 1:
             box.setInformativeText("\n".join(lines[1:]))
         box.exec()
@@ -1735,7 +1722,7 @@ class MainWindow(QMainWindow):
     def _batch_failed(self, message: str) -> None:
         self.batch_overlay.finish()
         self.batch_button.setEnabled(True)
-        QMessageBox.warning(self, "批量处理失败", message)
+        QMessageBox.warning(self, tr("批量处理失败"), message)
 
     def _batch_finished(self, worker) -> None:
         if self.batch_worker is worker:
@@ -1759,10 +1746,10 @@ class MainWindow(QMainWindow):
                 settings = load_ai_settings()
                 if not settings.api_key.strip() or not settings.model.strip():
                     answer = QMessageBox.question(
-                        self, "AI 尚未配置",
-                        "还没有填写 API Key 或模型名称。\n\n"
+                        self, tr("AI 尚未配置"),
+                        tr("还没有填写 API Key 或模型名称。\n\n"
                         "在“模型设置”里选择一个厂商预设（如 DeepSeek、Moonshot），"
-                        "只需填 API Key 即可使用。\n\n现在打开模型设置吗？",
+                        "只需填 API Key 即可使用。\n\n现在打开模型设置吗？"),
                         QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
                     )
                     self.send_button.setEnabled(True)
@@ -1775,7 +1762,7 @@ class MainWindow(QMainWindow):
             self.chat_view.add_user(message)
             self.chat_input.clear()
             self.send_button.setEnabled(False)
-            self.busy.start("AI 正在分析…", "模型返回后会自动显示结果")
+            self.busy.start(tr("AI 正在分析…"), tr("模型返回后会自动显示结果"))
             self.ai_worker = AIWorker(self.ai_assistant, message, tools, self)
             self.ai_worker.succeeded.connect(self._ai_succeeded)
             self.ai_worker.failed.connect(self._ai_failed)
@@ -1784,7 +1771,7 @@ class MainWindow(QMainWindow):
             self.send_button.setEnabled(True)
             self.ai_worker = None
             self.busy.stop()
-            QMessageBox.warning(self, "AI 设置或请求失败", str(exc))
+            QMessageBox.warning(self, tr("AI 设置或请求失败"), str(exc))
 
     def _ai_succeeded(self, outcome: AIOutcome) -> None:
         self.busy.stop()
@@ -1808,18 +1795,17 @@ class MainWindow(QMainWindow):
         result: DenoiseResult = candidates[-1]["result"]
         if not result.events:
             self.chat_view.add_notice(
-                "AI 请求的去噪预览没有检测到需要修复的区段（0 段），"
-                "已自动跳过确认，数据未改动。")
+                tr("AI 请求的去噪预览没有检测到需要修复的区段（0 段），"
+                "已自动跳过确认，数据未改动。"))
             return
         box = QMessageBox(self)
-        box.setWindowTitle("确认 AI 去噪预览")
+        box.setWindowTitle(tr("确认 AI 去噪预览"))
         box.setIcon(QMessageBox.Question)
-        box.setText(f"AI 请求应用去噪预览：{len(result.events)} 段，"
-                    f"修复 {result.repaired_count} 个采样，排除 {result.excluded_count} 个。")
-        box.setInformativeText("应用后只改处理版本，原始 WAV 不变，且可以撤销。")
+        box.setText(tf('AI 请求应用去噪预览：{_v0} 段，修复 {_v1} 个采样，排除 {_v2} 个。', _v0=(len(result.events)), _v1=(result.repaired_count), _v2=(result.excluded_count)))
+        box.setInformativeText(tr("应用后只改处理版本，原始 WAV 不变，且可以撤销。"))
         box.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        box.button(QMessageBox.Yes).setText("应用")
-        box.button(QMessageBox.No).setText("不应用")
+        box.button(QMessageBox.Yes).setText(tr("应用"))
+        box.button(QMessageBox.No).setText(tr("不应用"))
         box.setDefaultButton(QMessageBox.No)
         box.setEscapeButton(QMessageBox.No)
         if box.exec() != QMessageBox.Yes:
@@ -1837,14 +1823,14 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         if self.ai_worker is not None:
-            QMessageBox.information(self, "AI 请求进行中", "请等待当前 AI 请求结束后再关闭程序。")
+            QMessageBox.information(self, tr("AI 请求进行中"), tr("请等待当前 AI 请求结束后再关闭程序。"))
             event.ignore()
             return
         if self.batch_worker is not None:
             # 批量线程还在跑：先请求取消，再等它自然结束；中途销毁 QThread 会崩。
             answer = QMessageBox.question(
-                self, "批量处理进行中",
-                "批量任务尚未结束。取消并等待当前文件处理完后退出吗？",
+                self, tr("批量处理进行中"),
+                tr("批量任务尚未结束。取消并等待当前文件处理完后退出吗？"),
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
             )
             if answer != QMessageBox.Yes:
@@ -1853,27 +1839,27 @@ class MainWindow(QMainWindow):
             self.batch_worker.cancel()
             if not self.batch_worker.wait(60000):
                 QMessageBox.information(
-                    self, "任务仍在收尾", "批量任务尚未结束，请稍等几秒后再关闭窗口。")
+                    self, tr("任务仍在收尾"), tr("批量任务尚未结束，请稍等几秒后再关闭窗口。"))
                 event.ignore()
                 return
             event.accept()
             return
         if self.task is not None:
             answer = QMessageBox.question(
-                self, "仍有处理在进行",
-                "当前有后台任务未完成，立即退出可能丢失未保存的处理结果。是否仍要退出？",
+                self, tr("仍有处理在进行"),
+                tr("当前有后台任务未完成，立即退出可能丢失未保存的处理结果。是否仍要退出？"),
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
             )
             if answer != QMessageBox.Yes:
                 event.ignore()
                 return
             # 必须在工作线程真正结束后再销毁窗口：QThread 运行中被回收会直接崩溃。
-            self.busy.set_text("正在结束后台任务…")
+            self.busy.set_text(tr("正在结束后台任务…"))
             if not self.task.wait(20000):
                 self.busy.stop()
                 QMessageBox.information(
-                    self, "任务仍在收尾",
-                    "后台任务尚未结束，请稍等几秒后再关闭窗口。")
+                    self, tr("任务仍在收尾"),
+                    tr("后台任务尚未结束，请稍等几秒后再关闭窗口。"))
                 event.ignore()
                 return
         self.player.stop()

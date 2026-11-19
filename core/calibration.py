@@ -46,6 +46,7 @@ K 有两种来路，二者等效，本模块都支持：
 
 from __future__ import annotations
 
+from core.i18n import tf, tr
 import json
 import math
 from dataclasses import asdict, dataclass, field
@@ -60,8 +61,8 @@ MIN_DBFS = -140.0
 MODE_PARAMS = "params"
 MODE_REFERENCE = "reference"
 MODE_LABELS = {
-    MODE_PARAMS: "按硬件参数推算",
-    MODE_REFERENCE: "按已知声压级标定",
+    MODE_PARAMS: tr("按硬件参数推算"),
+    MODE_REFERENCE: tr("按已知声压级标定"),
 }
 
 
@@ -69,7 +70,7 @@ MODE_LABELS = {
 class Calibration:
     """一组「麦克风 + 前置增益」的校准。offset_db 是缓存出来的 K。"""
 
-    name: str = "默认校准"
+    name: str = tr("默认校准")
     mode: str = MODE_PARAMS
 
     # 参数推算用
@@ -110,14 +111,14 @@ class Calibration:
         """dBFS → dB SPL。未校准时抛 ValueError，避免静默给出假声压级。"""
         offset = self.offset_db()
         if offset is None:
-            raise ValueError("校准参数不完整，无法换算声压级")
+            raise ValueError(tr("校准参数不完整，无法换算声压级"))
         return float(dbfs) + offset
 
     def dbfs(self, spl_db: float) -> float:
         """dB SPL → dBFS，用于反推「这个声压级应该录到多少」。"""
         offset = self.offset_db()
         if offset is None:
-            raise ValueError("校准参数不完整，无法换算声压级")
+            raise ValueError(tr("校准参数不完整，无法换算声压级"))
         return float(spl_db) - offset
 
     def sensitivity_v_pa(self) -> float | None:
@@ -132,44 +133,42 @@ class Calibration:
         """一行摘要，界面上直接显示。"""
         offset = self.offset_db()
         if offset is None:
-            return f"{self.name}：参数不完整"
+            return tf('{_v0}：参数不完整', _v0=(self.name))
         if self.mode == MODE_REFERENCE:
             return (f"{self.name}：K = {offset:+.2f} dB"
                     f"（{self.ref_spl_db:.1f} dB SPL ↔ {self.ref_dbfs:+.2f} dBFS）")
-        return (f"{self.name}：K = {offset:+.2f} dB"
-                f"（{self.sensitivity_mv_pa:g} mV/Pa，增益 {self.preamp_gain_db:+.1f} dB，"
-                f"满幅 {self.adc_full_scale_vrms:g} Vrms）")
+        return (tf('{_v0}：K = {offset:+.2f} dB（{_v2:g} mV/Pa，增益 {_v3:+.1f} dB，满幅 {_v4:g} Vrms）', _v0=(self.name), offset=(offset), _v2=(self.sensitivity_mv_pa), _v3=(self.preamp_gain_db), _v4=(self.adc_full_scale_vrms)))
 
     def caveats(self) -> list[str]:
         """必须随结果一起显示的限定条件。空列表表示没有额外风险。"""
         notes: list[str] = []
         if self.mode == MODE_PARAMS:
-            notes.append("满幅电压取标称值，与声卡实际参考电压可能有偏差；有条件时改用已知声压级标定")
-        notes.append("若麦克风或模块带 AGC/ALC，增益随声压自动变化，本校准不成立")
-        notes.append("削顶录音反推的声压级偏低，需先排除削顶")
+            notes.append(tr("满幅电压取标称值，与声卡实际参考电压可能有偏差；有条件时改用已知声压级标定"))
+        notes.append(tr("若麦克风或模块带 AGC/ALC，增益随声压自动变化，本校准不成立"))
+        notes.append(tr("削顶录音反推的声压级偏低，需先排除削顶"))
         if abs(float(self.preamp_gain_db)) > 60.0:
-            notes.append("前置增益超过 60 dB，请确认数值口径（是放大倍数还是 dB）")
+            notes.append(tr("前置增益超过 60 dB，请确认数值口径（是放大倍数还是 dB）"))
         return notes
 
     # ------------------------------------------------------------ 校验
     def validate(self) -> None:
         """保存前检查，错误信息直接面向用户。"""
         if not self.name.strip():
-            raise ValueError("请填写校准名称（例如「电容麦 无增益」）")
+            raise ValueError(tr("请填写校准名称（例如「电容麦 无增益」）"))
         if self.mode == MODE_REFERENCE:
             if self.ref_spl_db is None or self.ref_dbfs is None:
-                raise ValueError("两点标定需要同时填写已知声压级与对应的 dBFS 读数")
+                raise ValueError(tr("两点标定需要同时填写已知声压级与对应的 dBFS 读数"))
             if not -20.0 <= float(self.ref_spl_db) <= 180.0:
-                raise ValueError("已知声压级应在 −20 ～ 180 dB SPL 之间")
+                raise ValueError(tr("已知声压级应在 −20 ～ 180 dB SPL 之间"))
             if not MIN_DBFS <= float(self.ref_dbfs) <= 0.0:
-                raise ValueError(f"dBFS 读数应在 {MIN_DBFS:.0f} ～ 0 之间（削顶时等于 0）")
+                raise ValueError(tf('dBFS 读数应在 {MIN_DBFS:.0f} ～ 0 之间（削顶时等于 0）', MIN_DBFS=(MIN_DBFS)))
             return
         if self.sensitivity_mv_pa is None or self.sensitivity_mv_pa <= 0:
-            raise ValueError("请填写麦克风灵敏度（mV/Pa，常见电容麦 5–50，驻极体 5–20）")
+            raise ValueError(tr("请填写麦克风灵敏度（mV/Pa，常见电容麦 5–50，驻极体 5–20）"))
         if not -20.0 <= float(self.preamp_gain_db) <= 120.0:
-            raise ValueError("前置增益应在 −20 ～ 120 dB 之间")
+            raise ValueError(tr("前置增益应在 −20 ～ 120 dB 之间"))
         if not 0.01 <= float(self.adc_full_scale_vrms) <= 20.0:
-            raise ValueError("满幅输入电压应在 0.01 ～ 20 Vrms 之间")
+            raise ValueError(tr("满幅输入电压应在 0.01 ～ 20 Vrms 之间"))
 
     # ------------------------------------------------------------ 序列化
     def to_dict(self) -> dict[str, Any]:

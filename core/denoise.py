@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+from core.i18n import tf, tr
 from dataclasses import dataclass
 from typing import Callable
 
@@ -139,7 +140,7 @@ def _detect_mask(
         residual[start:stop] = block_residual
         scale_values.append(_subsample(block_residual, take))
         if progress is not None:
-            progress(0.45 * stop / total, f"计算局部基线 {stop:,}/{total:,} 点")
+            progress(0.45 * stop / total, tf('计算局部基线 {stop:,}/{total:,} 点', stop=(stop), total=(total)))
         del baseline, block_residual
 
     scale_residual = np.concatenate(scale_values) if len(scale_values) > 1 else scale_values[0]
@@ -164,7 +165,7 @@ def _detect_mask(
         hit |= np.abs(residual[start:stop]) > np.float32(threshold * scale_r)
         candidates[start:stop] = hit
         if progress is not None:
-            progress(0.45 + 0.25 * stop / total, f"标记冲击候选 {stop:,}/{total:,} 点")
+            progress(0.45 + 0.25 * stop / total, tf('标记冲击候选 {stop:,}/{total:,} 点', stop=(stop), total=(total)))
     del scale_values, scale_residual
     return candidates, residual, scale_count
 
@@ -191,20 +192,20 @@ def detect_and_repair_impulses(
 ) -> DenoiseResult:
     x = np.asarray(samples, dtype=np.float64).reshape(-1)
     if len(x) < 9 or sample_rate <= 0:
-        raise ValueError("冲击检测至少需要 9 个采样点和正采样率")
+        raise ValueError(tr("冲击检测至少需要 9 个采样点和正采样率"))
     if threshold <= 0:
-        raise ValueError("检测阈值必须为正数")
+        raise ValueError(tr("检测阈值必须为正数"))
     if not np.isfinite(x).all():
-        raise ValueError("冲击检测输入包含 NaN 或无穷值")
+        raise ValueError(tr("冲击检测输入包含 NaN 或无穷值"))
 
     if progress is not None:
-        progress(0.02, "开始冲击检测")
+        progress(0.02, tr("开始冲击检测"))
 
     candidates, residual, scale_count = _detect_mask(x, threshold, BLOCK_SAMPLES, progress)
 
     padding = max(1, round(padding_ms * sample_rate / 1000))
     if progress is not None:
-        progress(0.72, "扩展冲击区间")
+        progress(0.72, tr("扩展冲击区间"))
     dilated = ndimage.maximum_filter1d(
         candidates.view(np.uint8), size=2 * padding + 1, mode="constant", cval=0
     )
@@ -246,8 +247,8 @@ def detect_and_repair_impulses(
             )
         )
         if progress is not None and index % report_every == 0:
-            progress(0.78 + 0.2 * index / total_regions, f"修复区段 {index}/{total_regions}")
+            progress(0.78 + 0.2 * index / total_regions, tf('修复区段 {index}/{total_regions}', index=(index), total_regions=(total_regions)))
 
     if progress is not None:
-        progress(1.0, "冲击检测完成")
+        progress(1.0, tr("冲击检测完成"))
     return DenoiseResult(cleaned, events, valid_mask, float(threshold), scale_count)

@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from core.i18n import tf, tr
 import numpy as np
 
 
@@ -66,7 +67,7 @@ def thin_xy(
     v = np.asarray(values, dtype=np.float64).reshape(-1)
     t = np.asarray(times, dtype=np.float64).reshape(-1)
     if len(v) != len(t):
-        raise ValueError("横纵轴长度不一致")
+        raise ValueError(tr("横纵轴长度不一致"))
     if len(v) <= max(4, int(max_points)):
         return t, v
     idx = min_max_indices(v, max(2, int(max_points) // 2))

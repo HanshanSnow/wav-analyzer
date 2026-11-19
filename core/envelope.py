@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.i18n import tf, tr
 from dataclasses import dataclass
 import warnings
 
@@ -48,9 +49,9 @@ def hilbert_envelope(values: np.ndarray) -> np.ndarray:
 def compute_envelope(samples: np.ndarray, sample_rate: int, method: str = "hilbert", rms_window_ms: float = 20.0) -> tuple[np.ndarray, np.ndarray]:
     x = np.asarray(samples, dtype=np.float64).reshape(-1)
     if len(x) < 2 or sample_rate <= 0:
-        raise ValueError("包络分析数据过短或采样率无效")
+        raise ValueError(tr("包络分析数据过短或采样率无效"))
     if not np.isfinite(x).all():
-        raise ValueError("包络分析输入包含 NaN 或无穷值")
+        raise ValueError(tr("包络分析输入包含 NaN 或无穷值"))
     centered = x - np.mean(x)
     if method == "hilbert":
         envelope = hilbert_envelope(centered)
@@ -58,7 +59,7 @@ def compute_envelope(samples: np.ndarray, sample_rate: int, method: str = "hilbe
         window = max(1, round(rms_window_ms * sample_rate / 1000))
         envelope = np.sqrt(np.convolve(centered ** 2, np.ones(window) / window, mode="same"))
     else:
-        raise ValueError(f"未知包络方法：{method}")
+        raise ValueError(tf('未知包络方法：{method}', method=(method)))
     return np.arange(len(x)) / sample_rate, envelope
 
 
@@ -66,11 +67,11 @@ def fit_envelope(times: np.ndarray, envelope: np.ndarray, model: str = "auto") -
     t = np.asarray(times, dtype=np.float64).reshape(-1)
     y = np.asarray(envelope, dtype=np.float64).reshape(-1)
     if len(t) != len(y) or len(t) < 2:
-        raise ValueError("包络拟合的时间和幅值数组长度必须一致且至少为 2")
+        raise ValueError(tr("包络拟合的时间和幅值数组长度必须一致且至少为 2"))
     finite = np.isfinite(t) & np.isfinite(y)
     t, y = t[finite], y[finite]
     if len(t) < 2:
-        raise ValueError("包络拟合没有足够的有效数据")
+        raise ValueError(tr("包络拟合没有足够的有效数据"))
     relative_t = t - t[0]
     models = ["constant", "linear", "exponential"] if model == "auto" else [model]
     fits = [_fit_one(relative_t, y, name) for name in models]
@@ -111,9 +112,9 @@ def _fit_one(t: np.ndarray, y: np.ndarray, model: str) -> EnvelopeFit:
             parameters = {"a": float(popt[0]), "b": float(popt[1]), "c": float(popt[2])}
             equation = "A(t) = a·exp(b·T) + c"
         except (RuntimeError, ValueError) as exc:
-            raise ValueError(f"指数包络拟合失败：{exc}") from exc
+            raise ValueError(tf('指数包络拟合失败：{exc}', exc=(exc))) from exc
     else:
-        raise ValueError(f"不支持的包络模型：{model}")
+        raise ValueError(tf('不支持的包络模型：{model}', model=(model)))
     residual = y - fitted
     rmse = float(np.sqrt(np.mean(residual ** 2)))
     total = float(np.sum((y - np.mean(y)) ** 2))

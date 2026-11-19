@@ -8,6 +8,7 @@ QThread + 信号回主线程，界面始终可响应。
 
 from __future__ import annotations
 
+from core.i18n import tf, tr
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import (
@@ -86,12 +87,12 @@ class BatchProgressOverlay(QWidget):
         layout.setContentsMargins(24, 20, 24, 18)
         layout.setSpacing(10)
 
-        self._title = QLabel("正在批量处理")
+        self._title = QLabel(tr("正在批量处理"))
         self._title.setStyleSheet("font-size: 13pt; font-weight: 600; color: #16232f;")
         layout.addWidget(self._title)
 
-        self._line_import = QLabel("正在导入文件：—")
-        self._line_process = QLabel("正在处理文件：—")
+        self._line_import = QLabel(tr("正在导入文件：—"))
+        self._line_process = QLabel(tr("正在处理文件：—"))
         for label in (self._line_import, self._line_process):
             label.setWordWrap(True)
             label.setTextInteractionFlags(Qt.NoTextInteraction)
@@ -109,7 +110,7 @@ class BatchProgressOverlay(QWidget):
         footer = QHBoxLayout()
         self._percent = QLabel("0%")
         self._percent.setStyleSheet("color: #546e7a;")
-        self._cancel = QPushButton("取消")
+        self._cancel = QPushButton(tr("取消"))
         self._cancel.setFixedWidth(84)
         self._cancel.clicked.connect(self._request_cancel)
         footer.addWidget(self._percent)
@@ -130,11 +131,11 @@ class BatchProgressOverlay(QWidget):
         self._process_name = ""
         self._stage = ""
         self._cancel.setEnabled(True)
-        self._cancel.setText("取消")
+        self._cancel.setText(tr("取消"))
         self._bar.setValue(0)
         self._percent.setText("0%")
-        self._line_import.setText("正在导入文件：—")
-        self._line_process.setText("正在处理文件：—")
+        self._line_import.setText(tr("正在导入文件：—"))
+        self._line_process.setText(tr("正在处理文件：—"))
         self._reset_styles()
         self._capture_backdrop()
         self.setGeometry(self.parentWidget().rect())
@@ -151,8 +152,8 @@ class BatchProgressOverlay(QWidget):
 
     def _request_cancel(self) -> None:
         self._cancel.setEnabled(False)
-        self._cancel.setText("取消中…")
-        self._percent.setText("正在停止，当前文件处理完后结束")
+        self._cancel.setText(tr("取消中…"))
+        self._percent.setText(tr("正在停止，当前文件处理完后结束"))
         self.cancelled.emit()
 
     # ------------------------------------------------------------ 进度
@@ -169,14 +170,14 @@ class BatchProgressOverlay(QWidget):
 
         if stage == "import":
             self._stage = "import"
-            self._line_import.setText(f"正在导入文件（{index}/{total}）：{self._import_name}")
+            self._line_import.setText(tf('正在导入文件（{index}/{total}）：{_v2}', index=(index), total=(total), _v2=(self._import_name)))
         elif stage in ("process", "merge", "done"):
             self._stage = "process"
             if self._import_name:
-                self._line_import.setText(f"已导入（{index}/{total}）：{self._import_name}")
-            label = "正在汇总" if stage == "merge" else "正在处理文件"
+                self._line_import.setText(tf('已导入（{index}/{total}）：{_v2}', index=(index), total=(total), _v2=(self._import_name)))
+            label = tr("正在汇总") if stage == "merge" else tr("正在处理文件")
             if stage == "done":
-                label = "已完成"
+                label = tr("已完成")
             self._line_process.setText(f"{label}（{index}/{total}）：{self._process_name or '—'}")
         self._reset_styles()
 
@@ -186,7 +187,7 @@ class BatchProgressOverlay(QWidget):
             return
         overall = ((index - 1) + max(0.0, min(1.0, float(fraction)))) / total
         self._bar.setValue(int(overall * 1000))
-        self._percent.setText(f"总进度 {overall * 100:.0f}%")
+        self._percent.setText(tf('总进度 {_v0:.0f}%', _v0=(overall * 100)))
 
     def _reset_styles(self) -> None:
         active = "font-size: 10.5pt; color: #16232f; font-weight: 600;"

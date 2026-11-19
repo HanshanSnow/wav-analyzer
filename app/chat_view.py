@@ -10,6 +10,7 @@ Qt 富文本不支持 border-radius（圆角）与 box-shadow，所以气泡是�
 
 from __future__ import annotations
 
+from core.i18n import tf, tr
 import html
 
 from PySide6.QtGui import QColor, QPalette, QTextCursor
@@ -19,10 +20,10 @@ from . import markdown_lite
 
 # 角色 → （气泡底色, 名称文字色, 名称）
 _ROLE_STYLE: dict[str, tuple[str, str, str]] = {
-    "user": ("#d8e8ff", "#12457f", "你"),
+    "user": ("#d8e8ff", "#12457f", tr("你")),
     "ai": ("#e9f4ec", "#1f5b38", "AI"),
-    "error": ("#fdeceb", "#a02a20", "请求失败"),
-    "notice": ("#fff7e0", "#7a5c00", "提示"),
+    "error": ("#fdeceb", "#a02a20", tr("请求失败")),
+    "notice": ("#fff7e0", "#7a5c00", tr("提示")),
 }
 _INDENT_PERCENT = 12  # 窄边留白比例：气泡占 88%，一眼能看出左右归属
 _TEXT_COLOR = "#1f2429"  # 气泡内正文固定深色：浅底色气泡在深色主题下也能读
@@ -81,7 +82,7 @@ class ChatView(QTextBrowser):
         self._append(_bubble(self._plain(text), "error", False))
 
     def add_welcome(self) -> None:
-        self.add_notice("AI 默认只接收当前文件的数值摘要。去噪操作需你确认，不会执行模型生成的代码。")
+        self.add_notice(tr("AI 默认只接收当前文件的数值摘要。去噪操作需你确认，不会执行模型生成的代码。"))
 
     # ------------------------------------------------------------ 内部
     @staticmethod

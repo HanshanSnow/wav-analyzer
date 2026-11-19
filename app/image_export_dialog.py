@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+from core.i18n import tf, tr
 from pathlib import Path
 
 from PySide6.QtCore import QSettings
@@ -25,21 +26,21 @@ KIND_ORDER = (KIND_WAVE, KIND_SPECTRUM, KIND_SPECTROGRAM)
 
 # 论文版式按物理尺寸出图（600 dpi），屏幕版式仍按像素。两者共用同一个下拉。
 SIZE_PRESETS = (
-    ("论文单栏 3.5 × 2.45 in（600 dpi，推荐）", "paper", "single", 0, 0),
-    ("论文双栏 7.0 × 2.6 in（600 dpi）", "paper", "double", 0, 0),
-    ("屏幕 1600 × 900（报告/PPT）", "screen", "", 1600, 900),
-    ("屏幕 1920 × 1080（全高清）", "screen", "", 1920, 1080),
-    ("自定义像素", "screen", "", 0, 0),
+    (tr("论文单栏 3.5 × 2.45 in（600 dpi，推荐）"), "paper", "single", 0, 0),
+    (tr("论文双栏 7.0 × 2.6 in（600 dpi）"), "paper", "double", 0, 0),
+    (tr("屏幕 1600 × 900（报告/PPT）"), "screen", "", 1600, 900),
+    (tr("屏幕 1920 × 1080（全高清）"), "screen", "", 1920, 1080),
+    (tr("自定义像素"), "screen", "", 0, 0),
 )
 LEGEND_PLACES = (
-    ("坐标区外（图底一行，论文推荐）", "outside"),
-    ("坐标区内右上角", "inside"),
-    ("不显示图例", "none"),
+    (tr("坐标区外（图底一行，论文推荐）"), "outside"),
+    (tr("坐标区内右上角"), "inside"),
+    (tr("不显示图例"), "none"),
 )
-BACKGROUNDS = (("白色（论文/报告）", "white"), ("深色（投影/屏幕）", "dark"), ("透明（叠放到其它版面）", "transparent"))
+BACKGROUNDS = ((tr("白色（论文/报告）"), "white"), (tr("深色（投影/屏幕）"), "dark"), (tr("透明（叠放到其它版面）"), "transparent"))
 
 # 每类图的扩展名与默认文件名后缀。
-KIND_SUFFIX = {KIND_WAVE: "波形", KIND_SPECTRUM: "频谱", KIND_SPECTROGRAM: "时频图"}
+KIND_SUFFIX = {KIND_WAVE: tr("波形"), KIND_SPECTRUM: tr("频谱"), KIND_SPECTROGRAM: tr("时频图")}
 
 
 class ImageExportDialog(QDialog):
@@ -54,7 +55,7 @@ class ImageExportDialog(QDialog):
         available: dict[str, bool] | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("导出图像 PNG")
+        self.setWindowTitle(tr("导出图像 PNG"))
         self.setMinimumWidth(560)
         self._available = {
             "original": True, "preview": False, "envelope": False, "fit": False,
@@ -65,8 +66,8 @@ class ImageExportDialog(QDialog):
         stored = QSettings("PhysicsExperiment", "SoundWavAnalyzer")
 
         hint = QLabel(
-            "导出的 PNG 按下方尺寸与背景重新渲染，不是界面截图："
-            "长音频会按 min/max 抽稀到 ≤20 万点绘制，峰谷形态与读数不受影响。"
+            tr("导出的 PNG 按下方尺寸与背景重新渲染，不是界面截图："
+            "长音频会按 min/max 抽稀到 ≤20 万点绘制，峰谷形态与读数不受影响。")
         )
         hint.setWordWrap(True)
         hint.setStyleSheet("color:#455a64;")
@@ -104,7 +105,7 @@ class ImageExportDialog(QDialog):
         saved_background = stored.value("export/background", "white")
         background_index = self.background.findData(saved_background)
         self.background.setCurrentIndex(max(0, background_index))
-        self.grid_check = QCheckBox("显示网格")
+        self.grid_check = QCheckBox(tr("显示网格"))
         self.legend_place = QComboBox()
         for label, value in LEGEND_PLACES:
             self.legend_place.addItem(label, value)
@@ -112,7 +113,7 @@ class ImageExportDialog(QDialog):
         legend_index = self.legend_place.findData(saved_legend)
         self.legend_place.setCurrentIndex(max(0, legend_index))
         self.title_edit = QLineEdit()
-        self.title_edit.setPlaceholderText("论文版式默认不画标题，图题写在 caption 里")
+        self.title_edit.setPlaceholderText(tr("论文版式默认不画标题，图题写在 caption 里"))
         # 标题不记忆：不同文件的图用同一个标题最容易出错。
 
         size_row = QHBoxLayout()
@@ -122,39 +123,39 @@ class ImageExportDialog(QDialog):
         size_row.addWidget(self.height_spin)
 
         image_form = QFormLayout()
-        image_form.addRow("尺寸 / 版式", size_row)
+        image_form.addRow(tr("尺寸 / 版式"), size_row)
         image_form.addRow("", self.size_note)
-        image_form.addRow("背景", self.background)
+        image_form.addRow(tr("背景"), self.background)
         flags = QHBoxLayout()
         flags.addWidget(self.grid_check)
         flags.addStretch()
-        image_form.addRow("图层", flags)
-        image_form.addRow("图例", self.legend_place)
-        image_form.addRow("标题", self.title_edit)
+        image_form.addRow(tr("图层"), flags)
+        image_form.addRow(tr("图例"), self.legend_place)
+        image_form.addRow(tr("标题"), self.title_edit)
 
         # ------------------------------------------------------------ 输出文件
         self.path_edit = QLineEdit(default_path)
-        browse = QPushButton("浏览…")
+        browse = QPushButton(tr("浏览…"))
         browse.clicked.connect(self._browse)
         path_row = QHBoxLayout()
         path_row.addWidget(self.path_edit, 1)
         path_row.addWidget(browse)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        buttons.button(QDialogButtonBox.Save).setText("导出")
-        buttons.button(QDialogButtonBox.Cancel).setText("取消")
+        buttons.button(QDialogButtonBox.Save).setText(tr("导出"))
+        buttons.button(QDialogButtonBox.Cancel).setText(tr("取消"))
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
 
         layout = QVBoxLayout(self)
         layout.addWidget(hint)
         form = QFormLayout()
-        form.addRow("图像类型", self.kind)
+        form.addRow(tr("图像类型"), self.kind)
         layout.addLayout(form)
         layout.addWidget(self.pages)
-        layout.addWidget(_group("图像设置", image_form))
+        layout.addWidget(_group(tr("图像设置"), image_form))
         path_form = QFormLayout()
-        path_form.addRow("保存到", path_row)
+        path_form.addRow(tr("保存到"), path_row)
         layout.addLayout(path_form)
         layout.addWidget(buttons)
 
@@ -174,18 +175,18 @@ class ImageExportDialog(QDialog):
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        group = QGroupBox("波形内容")
+        group = QGroupBox(tr("波形内容"))
         grid = QGridLayout(group)
-        self.wave_current = QCheckBox("当前波形（已应用处理的波形）")
+        self.wave_current = QCheckBox(tr("当前波形（已应用处理的波形）"))
         self.wave_current.setChecked(True)
         self.wave_current.setEnabled(False)
-        self.wave_original = QCheckBox("原始波形（处理前参考）")
-        self.wave_preview = QCheckBox("去噪预览（尚未应用的橙色曲线）")
-        self.wave_envelope = QCheckBox("包络线")
-        self.wave_fit = QCheckBox("拟合曲线（含拟合区间）")
-        self.wave_region = QCheckBox("选区底色")
+        self.wave_original = QCheckBox(tr("原始波形（处理前参考）"))
+        self.wave_preview = QCheckBox(tr("去噪预览（尚未应用的橙色曲线）"))
+        self.wave_envelope = QCheckBox(tr("包络线"))
+        self.wave_fit = QCheckBox(tr("拟合曲线（含拟合区间）"))
+        self.wave_region = QCheckBox(tr("选区底色"))
         self.wave_region.setChecked(True)
-        self.wave_cursor = QCheckBox("游标位置")
+        self.wave_cursor = QCheckBox(tr("游标位置"))
         self.wave_cursor.setChecked(True)
         items = [
             (self.wave_current, "current"),
@@ -202,7 +203,7 @@ class ImageExportDialog(QDialog):
                 available = self._available.get(key, True)
             box.setEnabled(available)
             if not available and key not in ("current",):
-                box.setText(box.text() + "（当前无数据）")
+                box.setText(box.text() + tr("（当前无数据）"))
             grid.addWidget(box, position // 2, position % 2)
         self.wave_original.setChecked(self._available.get("original", False))
         self.wave_preview.setChecked(self._available.get("preview", False))
@@ -212,8 +213,8 @@ class ImageExportDialog(QDialog):
         self.wave_cursor.setEnabled(self._available.get("cursor", True))
 
         note = QLabel(
-            "包络与拟合曲线来自“包络拟合”页的计算结果，未计算时不可选；"
-            "去噪预览只有点了“检测并预览”后才有内容。"
+            tr("包络与拟合曲线来自“包络拟合”页的计算结果，未计算时不可选；"
+            "去噪预览只有点了“检测并预览”后才有内容。")
         )
         note.setWordWrap(True)
         note.setStyleSheet("color:#607d8b;")
@@ -225,33 +226,33 @@ class ImageExportDialog(QDialog):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
-        group = QGroupBox("频谱内容")
+        group = QGroupBox(tr("频谱内容"))
         form = QFormLayout(group)
 
         self.spectrum_scale = QComboBox()
-        self.spectrum_scale.addItem("dBFS（对数，推荐）", True)
-        self.spectrum_scale.addItem("线性幅值 / FS", False)
+        self.spectrum_scale.addItem(tr("dBFS（对数，推荐）"), True)
+        self.spectrum_scale.addItem(tr("线性幅值 / FS"), False)
 
         self.spectrum_limit = QDoubleSpinBox()
         self.spectrum_limit.setRange(0.0, 100000.0)
         self.spectrum_limit.setDecimals(1)
         self.spectrum_limit.setSingleStep(500.0)
         self.spectrum_limit.setSuffix(" Hz")
-        self.spectrum_limit.setSpecialValueText("自动（画到奈奎斯特频率）")
+        self.spectrum_limit.setSpecialValueText(tr("自动（画到奈奎斯特频率）"))
         self.spectrum_limit.setValue(0.0)
 
-        self.spectrum_peaks = QCheckBox("标注主要谱峰频率")
+        self.spectrum_peaks = QCheckBox(tr("标注主要谱峰频率"))
         self.spectrum_peaks.setChecked(True)
-        self.spectrum_harmonics = QCheckBox("标出基频整数倍位置（谐波）")
-        self.spectrum_phase = QCheckBox("附带相位谱子图")
+        self.spectrum_harmonics = QCheckBox(tr("标出基频整数倍位置（谐波）"))
+        self.spectrum_phase = QCheckBox(tr("附带相位谱子图"))
 
-        form.addRow("纵轴", self.spectrum_scale)
-        form.addRow("频率上限", self.spectrum_limit)
+        form.addRow(tr("纵轴"), self.spectrum_scale)
+        form.addRow(tr("频率上限"), self.spectrum_limit)
         form.addRow("", self.spectrum_peaks)
         form.addRow("", self.spectrum_harmonics)
         form.addRow("", self.spectrum_phase)
 
-        note = QLabel("频谱按 FFT 分析窗口计算，长音频只取居中窗口；图上频率分辨率为采样率 ÷ FFT 点数。")
+        note = QLabel(tr("频谱按 FFT 分析窗口计算，长音频只取居中窗口；图上频率分辨率为采样率 ÷ FFT 点数。"))
         note.setWordWrap(True)
         note.setStyleSheet("color:#607d8b;")
         layout.addWidget(group)
@@ -262,7 +263,7 @@ class ImageExportDialog(QDialog):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
-        group = QGroupBox("时频内容")
+        group = QGroupBox(tr("时频内容"))
         form = QFormLayout(group)
 
         self.spectro_limit = QDoubleSpinBox()
@@ -270,7 +271,7 @@ class ImageExportDialog(QDialog):
         self.spectro_limit.setDecimals(1)
         self.spectro_limit.setSingleStep(500.0)
         self.spectro_limit.setSuffix(" Hz")
-        self.spectro_limit.setSpecialValueText("自动（画到奈奎斯特频率）")
+        self.spectro_limit.setSpecialValueText(tr("自动（画到奈奎斯特频率）"))
         self.spectro_limit.setValue(0.0)
 
         self.spectro_floor = QDoubleSpinBox()
@@ -280,10 +281,10 @@ class ImageExportDialog(QDialog):
         self.spectro_floor.setSuffix(" dBFS")
         self.spectro_floor.setValue(-100.0)
 
-        form.addRow("频率上限", self.spectro_limit)
-        form.addRow("色标下限", self.spectro_floor)
+        form.addRow(tr("频率上限"), self.spectro_limit)
+        form.addRow(tr("色标下限"), self.spectro_floor)
 
-        note = QLabel("色标上限自动取 99.5% 分位；调低下限可以看出更弱的成分，但整图会偏亮。")
+        note = QLabel(tr("色标上限自动取 99.5% 分位；调低下限可以看出更弱的成分，但整图会偏亮。"))
         note.setWordWrap(True)
         note.setStyleSheet("color:#607d8b;")
         layout.addWidget(group)
@@ -304,12 +305,10 @@ class ImageExportDialog(QDialog):
         if paper:
             pixels = PAPER_SIZES.get(column, PAPER_SIZES["single"])
             # 用 :g 而不是 :.1f——2.45 会被舍成 2.5，和 1470 px 对不上，看着像写错了。
-            text = (f"物理尺寸 {pixels[0]:g} × {pixels[1]:g} in，"
-                    f"{PAPER_DPI} dpi → {int(round(pixels[0] * PAPER_DPI))} × "
-                    f"{int(round(pixels[1] * PAPER_DPI))} px；刻度朝内、四边齐全、白底")
+            text = (tf('物理尺寸 {_v0:g} × {_v1:g} in，{PAPER_DPI} dpi → {_v3} × {_v4} px；刻度朝内、四边齐全、白底', _v0=(pixels[0]), _v1=(pixels[1]), PAPER_DPI=(PAPER_DPI), _v3=(int(round(pixels[0] * PAPER_DPI))), _v4=(int(round(pixels[1] * PAPER_DPI)))))
             self.size_note.setText(text)
         else:
-            self.size_note.setText("屏幕版式：按像素出图，可选深色或透明背景")
+            self.size_note.setText(tr("屏幕版式：按像素出图，可选深色或透明背景"))
             if width and height:
                 for spin, value in ((self.width_spin, width), (self.height_spin, height)):
                     spin.blockSignals(True)
@@ -329,7 +328,7 @@ class ImageExportDialog(QDialog):
         self.size_preset.blockSignals(True)
         self.size_preset.setCurrentIndex(len(SIZE_PRESETS) - 1)
         self.size_preset.blockSignals(False)
-        self.size_note.setText("屏幕版式：自定义像素")
+        self.size_note.setText(tr("屏幕版式：自定义像素"))
 
     def _is_paper(self) -> bool:
         data = self.size_preset.currentData()
@@ -345,7 +344,7 @@ class ImageExportDialog(QDialog):
         current = self.path_edit.text().strip()
         directory = str(Path(current).parent) if current else ""
         path, _ = QFileDialog.getSaveFileName(
-            self, "保存 PNG", current or "waveform.png", "PNG 图像 (*.png)")
+            self, tr("保存 PNG"), current or "waveform.png", tr("PNG 图像 (*.png)"))
         if path:
             if not path.lower().endswith(".png"):
                 path += ".png"
@@ -402,17 +401,17 @@ class ImageExportDialog(QDialog):
     def accept(self) -> None:
         path = self.output_path()
         if not path:
-            QMessageBox.warning(self, "缺少保存路径", "请先选择 PNG 文件保存位置。")
+            QMessageBox.warning(self, tr("缺少保存路径"), tr("请先选择 PNG 文件保存位置。"))
             self._browse()
             return
         target = Path(path)
         if target.suffix.lower() != ".png":
-            QMessageBox.warning(self, "格式不支持", "本功能只导出 PNG（.png）。")
+            QMessageBox.warning(self, tr("格式不支持"), tr("本功能只导出 PNG（.png）。"))
             return
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
         except Exception as exc:
-            QMessageBox.warning(self, "目录不可用", f"无法创建目录：{exc}")
+            QMessageBox.warning(self, tr("目录不可用"), tf('无法创建目录：{exc}', exc=(exc)))
             return
         stored = QSettings("PhysicsExperiment", "SoundWavAnalyzer")
         stored.setValue("export/width", self.width_spin.value())
@@ -432,10 +431,10 @@ def _group(title: str, form: QFormLayout) -> QGroupBox:
 
 def suggest_path(source_path: Path | None, kind: str, channel_index: int = 0) -> str:
     """按源文件与图像类型给出默认输出路径。"""
-    suffix = KIND_SUFFIX.get(kind, "图像")
+    suffix = KIND_SUFFIX.get(kind, tr("图像"))
     if source_path is None:
         return str(Path.cwd() / f"{suffix}.png")
     stem = source_path.stem or "audio"
     if channel_index:
-        stem = f"{stem}_声道{channel_index + 1}"
+        stem = tf('{stem}_声道{_v1}', stem=(stem), _v1=(channel_index + 1))
     return str(source_path.with_name(f"{stem}_{suffix}.png"))

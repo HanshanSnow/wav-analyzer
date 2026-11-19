@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from core.i18n import tf, tr
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -54,56 +55,56 @@ def _all_finite(x: np.ndarray) -> bool:
 # 键名与 interval_statistics 的返回值一一对应。界面、报告与手册共用这一份释义，
 # 避免只有英文变量名时产生歧义（例如 peak_amplitude 与 peak_to_peak、rms 与 rms_dbfs）。
 STATISTIC_FIELDS: tuple[tuple[str, str, str], ...] = (
-    ("start_s", "有效起点 (s)",
-     "参与统计的第一个采样点时间；若起点被排除段覆盖，会自动向右收缩"),
-    ("end_s", "有效终点 (s)",
-     "参与统计的最后一个采样点时间（右端按开区间理解）"),
-    ("requested_start_s", "请求起点 (s)",
-     "蓝框选区原始起点，用于核对掩码把边界修正了多少"),
-    ("requested_end_s", "请求终点 (s)",
-     "蓝框选区原始终点"),
-    ("samples", "有效采样点数",
-     "真正参与计算的采样点数（已扣除被排除的长冲击段）"),
-    ("excluded_samples", "排除点数",
-     "被判为长冲击、未做插值修复的点数；这些点不计入任何幅值/能量统计"),
-    ("duration_s", "有效时长 (s)",
-     "有效采样点数 ÷ 采样率，通常略小于蓝框宽度"),
-    ("mean", "均值 / 直流分量 (FS)",
-     "整段有效数据的算术平均；明显不为 0 说明存在直流偏置，报告需注明"),
-    ("std", "标准差 (FS)",
-     "去均值后的起伏幅度，只反映交流成分，与直流偏置无关"),
-    ("min", "最小瞬时值 (FS)",
-     "单个采样点的最小值（有符号，负半周最深处）"),
-    ("max", "最大瞬时值 (FS)",
-     "单个采样点的最大值（有符号，正半周最高处）"),
-    ("peak_amplitude", "峰值振幅 max|x| (FS)",
-     "正负两侧绝对值的较大者，恒为正值；不是峰峰值"),
-    ("peak_to_peak", "峰峰值 max−min (FS)",
-     "max 减 min，等于波形总摆幅，约为峰值振幅的 2 倍（对称波形）"),
-    ("rms", "有效值 RMS (FS)",
-     "√(mean(x²))，包含直流分量；整周期正弦时 RMS = 峰值 ÷ √2 ≈ 0.707×峰值"),
-    ("rms_dbfs", "RMS 电平 (dBFS)",
-     "20·lg(RMS/FS)，满幅正弦约 −3.01 dBFS；dBFS 是数字满幅相对值，不等于 dB SPL"),
-    ("rms_spl", "等效声压级 (dB SPL)",
-     "RMS 电平 + 校准偏移 K；等效于该区间的能量平均声压级，仅在配置声学校准后出现"),
-    ("peak_spl", "峰值声压级 (dB SPL)",
-     "20·lg(峰值振幅) + K，未计频率计权，仅在配置声学校准后出现"),
-    ("calibration_offset_db", "校准偏移 K (dB)",
-     "dB SPL = dBFS + K；由灵敏度、前置增益与满幅电压推算，或由已知声压级标定得到"),
-    ("calibration_name", "校准配置",
-     "本次换算使用的校准名称；空表示未校准，此时不输出任何 dB SPL"),
-    ("crest_factor", "波峰因数 (峰值/RMS)",
-     "峰值振幅 ÷ RMS；正弦约 1.414，脉冲/冲击性越强该值越大"),
-    ("main_frequency_hz", "主频 (Hz)",
-     "幅值最大谱峰对应的频率；长文件按居中窗口估计，实际窗口见“计算口径”"),
-    ("main_amplitude", "主频振幅 (FS)",
-     "单边幅值谱在主频处的幅值；整周期正弦时约等于峰值振幅"),
-    ("main_amplitude_dbfs", "主频电平 (dBFS)",
-     "20·lg(主频振幅)，用于和本底噪声比较，不是声压级"),
-    ("thd", "总谐波失真 THD",
-     "2～10 次谐波（到奈奎斯特频率为止）幅值的均方根 ÷ 基波幅值；纯正弦接近 0"),
-    ("analysis_scope", "计算口径说明",
-     "声明哪些量基于选区全部采样点、哪些量基于受限 FFT 窗口"),
+    ("start_s", tr("有效起点 (s)"),
+     tr("参与统计的第一个采样点时间；若起点被排除段覆盖，会自动向右收缩")),
+    ("end_s", tr("有效终点 (s)"),
+     tr("参与统计的最后一个采样点时间（右端按开区间理解）")),
+    ("requested_start_s", tr("请求起点 (s)"),
+     tr("蓝框选区原始起点，用于核对掩码把边界修正了多少")),
+    ("requested_end_s", tr("请求终点 (s)"),
+     tr("蓝框选区原始终点")),
+    ("samples", tr("有效采样点数"),
+     tr("真正参与计算的采样点数（已扣除被排除的长冲击段）")),
+    ("excluded_samples", tr("排除点数"),
+     tr("被判为长冲击、未做插值修复的点数；这些点不计入任何幅值/能量统计")),
+    ("duration_s", tr("有效时长 (s)"),
+     tr("有效采样点数 ÷ 采样率，通常略小于蓝框宽度")),
+    ("mean", tr("均值 / 直流分量 (FS)"),
+     tr("整段有效数据的算术平均；明显不为 0 说明存在直流偏置，报告需注明")),
+    ("std", tr("标准差 (FS)"),
+     tr("去均值后的起伏幅度，只反映交流成分，与直流偏置无关")),
+    ("min", tr("最小瞬时值 (FS)"),
+     tr("单个采样点的最小值（有符号，负半周最深处）")),
+    ("max", tr("最大瞬时值 (FS)"),
+     tr("单个采样点的最大值（有符号，正半周最高处）")),
+    ("peak_amplitude", tr("峰值振幅 max|x| (FS)"),
+     tr("正负两侧绝对值的较大者，恒为正值；不是峰峰值")),
+    ("peak_to_peak", tr("峰峰值 max−min (FS)"),
+     tr("max 减 min，等于波形总摆幅，约为峰值振幅的 2 倍（对称波形）")),
+    ("rms", tr("有效值 RMS (FS)"),
+     tr("√(mean(x²))，包含直流分量；整周期正弦时 RMS = 峰值 ÷ √2 ≈ 0.707×峰值")),
+    ("rms_dbfs", tr("RMS 电平 (dBFS)"),
+     tr("20·lg(RMS/FS)，满幅正弦约 −3.01 dBFS；dBFS 是数字满幅相对值，不等于 dB SPL")),
+    ("rms_spl", tr("等效声压级 (dB SPL)"),
+     tr("RMS 电平 + 校准偏移 K；等效于该区间的能量平均声压级，仅在配置声学校准后出现")),
+    ("peak_spl", tr("峰值声压级 (dB SPL)"),
+     tr("20·lg(峰值振幅) + K，未计频率计权，仅在配置声学校准后出现")),
+    ("calibration_offset_db", tr("校准偏移 K (dB)"),
+     tr("dB SPL = dBFS + K；由灵敏度、前置增益与满幅电压推算，或由已知声压级标定得到")),
+    ("calibration_name", tr("校准配置"),
+     tr("本次换算使用的校准名称；空表示未校准，此时不输出任何 dB SPL")),
+    ("crest_factor", tr("波峰因数 (峰值/RMS)"),
+     tr("峰值振幅 ÷ RMS；正弦约 1.414，脉冲/冲击性越强该值越大")),
+    ("main_frequency_hz", tr("主频 (Hz)"),
+     tr("幅值最大谱峰对应的频率；长文件按居中窗口估计，实际窗口见“计算口径”")),
+    ("main_amplitude", tr("主频振幅 (FS)"),
+     tr("单边幅值谱在主频处的幅值；整周期正弦时约等于峰值振幅")),
+    ("main_amplitude_dbfs", tr("主频电平 (dBFS)"),
+     tr("20·lg(主频振幅)，用于和本底噪声比较，不是声压级")),
+    ("thd", tr("总谐波失真 THD"),
+     tr("2～10 次谐波（到奈奎斯特频率为止）幅值的均方根 ÷ 基波幅值；纯正弦接近 0")),
+    ("analysis_scope", tr("计算口径说明"),
+     tr("声明哪些量基于选区全部采样点、哪些量基于受限 FFT 窗口")),
 )
 
 STATISTIC_LABELS: dict[str, str] = {key: label for key, label, _ in STATISTIC_FIELDS}
@@ -127,11 +128,11 @@ def statistics_rows(stats: dict[str, Any]) -> list[tuple[str, str, Any, str]]:
 
 def _bounds(length: int, sample_rate: int, start_s: float, end_s: float) -> tuple[int, int]:
     if sample_rate <= 0:
-        raise ValueError("采样率必须为正数")
+        raise ValueError(tr("采样率必须为正数"))
     start = max(0, int(np.floor(start_s * sample_rate)))
     end = min(length, int(np.ceil(end_s * sample_rate)))
     if start_s < 0 or end_s <= start_s or start >= end:
-        raise ValueError("统计区间无效：需要 0 ≤ start < end，且区间内必须有采样点")
+        raise ValueError(tr("统计区间无效：需要 0 ≤ start < end，且区间内必须有采样点"))
     return start, end
 
 
@@ -146,14 +147,14 @@ def interval_statistics(
 ) -> dict[str, Any]:
     x = np.asarray(samples, dtype=np.float64).reshape(-1)
     if len(x) == 0:
-        raise ValueError("没有可统计的音频数据")
+        raise ValueError(tr("没有可统计的音频数据"))
     end_s = len(x) / sample_rate if end_s is None else end_s
     start, end = _bounds(len(x), sample_rate, start_s, end_s)
     segment = x[start:end]
     if valid_mask is not None:
         mask = np.asarray(valid_mask, dtype=bool).reshape(-1)
         if len(mask) != len(x):
-            raise ValueError("有效区间掩码长度与音频不一致")
+            raise ValueError(tr("有效区间掩码长度与音频不一致"))
         local_mask = mask[start:end]
         if local_mask.all():
             # 常见情形：整选区都有效。直接复用视图，省掉一份全量副本。
@@ -170,9 +171,9 @@ def interval_statistics(
         selected = segment
         first_valid, last_valid = 0, max(0, len(segment) - 1)
     if len(selected) < 2:
-        raise ValueError("区间内有效采样点不足")
+        raise ValueError(tr("区间内有效采样点不足"))
     if not _all_finite(selected):
-        raise ValueError("统计区间包含 NaN 或无穷值")
+        raise ValueError(tr("统计区间包含 NaN 或无穷值"))
     count = int(selected.size)
     mean = float(np.sum(selected) / count)
     sum_squares = _sum_squares(selected)
@@ -182,14 +183,13 @@ def interval_statistics(
     # 主频/THD 用带上限的 FFT，避免长选区触发全量 FFT 卡死界面。
     # RMS 等能量统计量仍基于完整选区，因此数值精度不受影响。
     fourier = fourier_analysis(selected, sample_rate, fundamental_frequency=fundamental_frequency)
-    energy_note = "RMS/峰值/标准差基于选区全部有效采样点"
+    energy_note = tr("RMS/峰值/标准差基于选区全部有效采样点")
     if fourier.analyzed_samples < fourier.total_samples:
         freq_note = (
-            f"主频/THD 基于居中窗口 {fourier.analyzed_samples:,}/{fourier.total_samples:,} 点"
-            f"（{fourier.analysis_offset:.3f}–{fourier.analysis_offset + fourier.analyzed_samples / sample_rate:.3f} s）"
+            tf('主频/THD 基于居中窗口 {_v0:,}/{_v1:,} 点（{_v2:.3f}–{_v3:.3f} s）', _v0=(fourier.analyzed_samples), _v1=(fourier.total_samples), _v2=(fourier.analysis_offset), _v3=(fourier.analysis_offset + fourier.analyzed_samples / sample_rate))
         )
     else:
-        freq_note = "主频/THD 基于选区全部有效采样点"
+        freq_note = tr("主频/THD 基于选区全部有效采样点")
     # 校准偏移 K：未配置或参数不全时为 None，此时不输出任何 dB SPL 字段。
     # 宁可少给一列，也不要给一个看起来合理、实则没有标定依据的声压级。
     result: dict[str, Any] = {
@@ -263,7 +263,7 @@ def probe_time(
 ) -> dict[str, float]:
     x = np.asarray(samples, dtype=np.float64).reshape(-1)
     if not 0 <= time_s < len(x) / sample_rate:
-        raise ValueError("读数时间超出音频范围")
+        raise ValueError(tr("读数时间超出音频范围"))
     center = int(round(time_s * sample_rate))
     instant = float(x[min(center, len(x) - 1)])
     half = max(1, round(local_window_ms * sample_rate / 2000))

@@ -5,6 +5,10 @@
 正则分不清字符串、注释、f-string 和字典键，改错一处就是界面崩。AST 能拿到
 每个字符串常量的精确起止位置，且天然跳过注释。
 
+**偏移量必须按 UTF-8 字节算**：``ast`` 的 ``col_offset`` 是字节偏移，不是字符
+偏移。含中文的行里两者相差很大，按字符算会把括号插进字符串中间，直接把文件
+改成语法错误。
+
 三类东西**故意不包**：
 - 文档字符串（不是界面文案，翻译了只会让人看不懂代码）
 - 字典的键、集合元素、函数默认值（键被翻译后，用原中文查表的代码会全部失效）
@@ -79,48 +83,84 @@ def _skip_nodes(tree: ast.AST) -> set[int]:
     return skip
 
 
-def _offsets(text: str) -> list[int]:
+def _byte_offsets(text: str) -> list[int]:
+    """每行起始处的 UTF-8 字节偏移，与 ast 的 col_offset 同一坐标系。
+
+    必须按 ``\\n`` 切行，不能用 ``str.splitlines()``：后者把 ``\\x0b``、``\\x0c``、
+    ``\\u2028`` 也当行界，而 Python 词法分析器只认 ``\\n``，两者行号一旦错开，
+    插进去的括号就会落进字符串内部。
+    """
     offs = [0]
-    for line in text.splitlines(keepends=True):
-        offs.append(offs[-1] + len(line))
+    for line in text.split("\n"):
+        offs.append(offs[-1] + len(line.encode("utf-8")) + 1)
     return offs
 
 
 def _strip_f_prefix(literal: str) -> str:
-    """f"..." / rf"..." / fr"..." → "..." """
     return re.sub(r"^(?:[rR][fF]|[fF][rR]|[fF])", "", literal, count=1)
 
 
-def _build_tf(src: str, node: ast.JoinedStr, start: int, end: int,
-              offs: list[int]) -> str:
-    template = _strip_f_prefix(src[start:end])
-    names: list[str] = []
+def _slice(raw: bytes, node: ast.AST, offs: list[int]) -> str:
+    start = offs[node.lineno - 1] + node.col_offset
+    end = offs[node.end_lineno - 1] + node.end_col_offset
+    return raw[start:end].decode("utf-8")
+
+
+def _build_tf(raw: bytes, node: ast.JoinedStr, offs: list[int]) -> str:
+    """把 f-string 重建为 ``tf(模板, 参数=表达式)``。
+
+    模板必须**重新拼**而不是照抄源码：源码里的占位符是 ``{pixels[0]:g}`` 这种
+    表达式，而参数名已经改成了 ``_v0``，照抄会让 format 找不到 ``pixels``。
+    拼好的模板用 ``repr()`` 输出，转义交给 Python 自己处理。
+    """
+    parts: list[str] = []
+    kws: list[str] = []
     seen: set[str] = set()
+    reserved = {"tf", "tr", "self", "cls", "None", "True", "False"}
+
     for v in node.values:
+        if isinstance(v, ast.Constant) and isinstance(v.value, str):
+            parts.append(v.value.replace("{", "{{").replace("}", "}}"))
+            continue
         if not isinstance(v, ast.FormattedValue):
             continue
-        expr = src[offs[v.value.lineno - 1] + v.value.col_offset:
-                   offs[v.value.end_lineno - 1] + v.value.end_col_offset]
-        if expr.isidentifier() and expr not in seen and expr not in {
-                "tf", "tr", "self", "cls", "None", "True", "False"}:
+        expr = _slice(raw, v.value, offs)
+        if expr.isidentifier() and expr not in seen and expr not in reserved:
             name = expr
         else:
-            name = "_v%d" % len(names)
+            name = "_v%d" % len(kws)
         seen.add(name)
-        names.append("%s=(%s)" % (name, expr))
-    if names:
-        return "tf(%s, %s)" % (template, ", ".join(names))
-    return "tf(%s)" % template
+        piece = "{" + name
+        if v.conversion != -1:
+            piece += "!" + chr(v.conversion)
+        if v.format_spec is not None:
+            spec = _slice(raw, v.format_spec, offs)
+            # format_spec 节点的源码跨度已经包含前导冒号，别再加一个
+            piece += spec if spec.startswith(":") else ":" + spec
+        parts.append(piece + "}")
+        kws.append("%s=(%s)" % (name, expr))
+
+    template = "".join(parts)
+    head = "tf(%r" % template
+    return head + (", " + ", ".join(kws) if kws else "") + ")"
 
 
 def wrap(path: Path, dry: bool) -> tuple[int, int]:
     src = path.read_text(encoding="utf-8")
     tree = ast.parse(src)
     skip = _skip_nodes(tree)
-    offs = _offsets(src)
+    offs = _byte_offsets(src)
+    raw = src.encode("utf-8")
 
-    fstring_nodes: set[int] = set()
-    edits: list[tuple[int, int, str]] = []
+    edits: list[tuple[int, int, bytes]] = []
+    n_fstring = 0
+
+    # f-string 整段替换会覆盖它内部的分段常量，必须先把这些子节点全部排除，
+    # 否则同一区间会被改写两次，括号落进字符串中间。
+    for node in ast.walk(tree):
+        if isinstance(node, ast.JoinedStr):
+            for sub in ast.walk(node):
+                skip.add(id(sub))
 
     for node in ast.walk(tree):
         if isinstance(node, ast.JoinedStr):
@@ -131,8 +171,8 @@ def wrap(path: Path, dry: bool) -> tuple[int, int]:
             end = offs[node.end_lineno - 1] + node.end_col_offset
             if src[:start].rstrip().endswith(("tf(", "tr(")):
                 continue
-            edits.append((start, end, _build_tf(src, node, start, end, offs)))
-            fstring_nodes.add(id(node))
+            edits.append((start, end, _build_tf(raw, node, offs).encode("utf-8")))
+            n_fstring += 1
             continue
 
         if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
@@ -141,34 +181,44 @@ def wrap(path: Path, dry: bool) -> tuple[int, int]:
             continue
         start = offs[node.lineno - 1] + node.col_offset
         end = offs[node.end_lineno - 1] + node.end_col_offset
-        if src[:start].rstrip().endswith(("tr(", "tf(")):
+        prev = raw[max(0, start - 16):start].decode("utf-8", "ignore").rstrip()
+        if prev.endswith(("tr(", "tf(")):
             continue
-        edits.append((start, end, "tr(" + src[start:end] + ")"))
+        literal = raw[start:end]
+        edits.append((start, end, b"tr(" + literal + b")"))
 
     if not edits:
         return 0, 0
 
-    new = src
+    out = raw
     for start, end, rep in sorted(edits, key=lambda e: e[0], reverse=True):
-        new = new[:start] + rep + new[end:]
+        out = out[:start] + rep + out[end:]
 
+    new = out.decode("utf-8")
     if IMPORT_LINE not in new and "from core.i18n import" not in new:
         lines = new.split("\n")
-        insert_at = 0
-        for i, line in enumerate(lines[:60]):
-            if line.startswith(("import ", "from ")):
+        # __future__ 必须留在最前面（放在它前面会直接 SyntaxError）
+        future_end = 0
+        insert_at = None
+        for i, line in enumerate(lines[:80]):
+            s = line.strip()
+            if s.startswith("from __future__"):
+                future_end = i + 1
+                continue
+            if s.startswith(("import ", "from ")) and insert_at is None:
                 insert_at = i
                 break
+        if insert_at is None:
+            insert_at = future_end
         lines.insert(insert_at, IMPORT_LINE)
         new = "\n".join(lines)
 
     if not dry:
         path.write_text(new, encoding="utf-8", newline="")
-    return len(edits), len(fstring_nodes)
+    return len(edits), n_fstring
 
 
 def collect_used() -> list[str]:
-    """扫描代码里所有 tr(...) / tf(...) 的中文原文。"""
     used: list[str] = []
     for p in _targets():
         tree = ast.parse(p.read_text(encoding="utf-8"))

@@ -1,6 +1,7 @@
 """音频播放：直接用 sounddevice 播放 numpy 数据，无需临时文件。"""
 from __future__ import annotations
 
+from core.i18n import tf, tr
 import time
 
 import numpy as np
@@ -45,10 +46,10 @@ class AudioPlayer(QObject):
     def play(self, samples: np.ndarray, sample_rate: int, offset_seconds: float = 0.0) -> None:
         """播放给定数据；offset_seconds 用于把播放头映射回整段音频的时间轴。"""
         if sd is None:
-            raise RuntimeError("当前环境缺少 sounddevice，无法播放音频")
+            raise RuntimeError(tr("当前环境缺少 sounddevice，无法播放音频"))
         data = np.asarray(samples, dtype=np.float32)
         if data.size == 0:
-            raise ValueError("没有可播放的数据")
+            raise ValueError(tr("没有可播放的数据"))
         if data.ndim == 1:
             data = data[:, None]
         data = np.clip(data, -1.0, 1.0)
