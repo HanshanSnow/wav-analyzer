@@ -5,7 +5,18 @@ from pathlib import Path
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
-from app.main_window import MainWindow
+
+def _apply_saved_language() -> None:
+    """在导入界面模块之前确定界面语言。
+
+    时机很重要：``app/`` 与 ``core/`` 里有模块级的 ``tr()`` 字符串常量，它们在
+    import 时求值。如果先 import 再切语言，那些常量会永远停在中文。
+    """
+    from PySide6.QtCore import QSettings
+
+    from core.i18n import DEFAULT_LANGUAGE, LANGUAGE_SETTINGS_KEY, set_language
+
+    set_language(str(QSettings().value(LANGUAGE_SETTINGS_KEY, DEFAULT_LANGUAGE)))
 
 
 def _selftest(wav_path: Path) -> int:
@@ -126,6 +137,11 @@ def main() -> int:
     app.setOrganizationName("PhysicsExperiment")
     app.setStyle("Fusion")
     app.setFont(QFont("Microsoft YaHei", 9))
+
+    # 语言必须在导入主窗口之前定下来（QSettings 也已就绪，路径依赖上面两个名称）
+    _apply_saved_language()
+    from app.main_window import MainWindow
+
     window = MainWindow()
     window.show()
     if len(sys.argv) > 1 and Path(sys.argv[1]).is_file():

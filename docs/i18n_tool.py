@@ -249,6 +249,10 @@ def report() -> int:
 
 
 def main(argv: list[str]) -> int:
+    # 脚本在 docs/ 下，sys.path[0] 不是项目根，导入 core.i18n_en 前先补上
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--report", action="store_true")

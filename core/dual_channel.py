@@ -29,5 +29,5 @@ def analyze_dual_channel(audio: AudioData, fundamental_frequency: float) -> dict
         "received_dbfs": recv_db,
         "level_difference_db": ref_db - recv_db,
         "warning": warning,
-        "note": tr("未扣除零时延标定；MAX9814 AGC 工作时幅值比不可直接视为隔声量。"),
+        "note": tr("未扣除零时延标定；AGC 工作时幅值比不能直接当作结论。"),
     }

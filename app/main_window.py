@@ -1,17 +1,21 @@
 from __future__ import annotations
 
-from core.i18n import tf, tr
+import sys
+
+from core.i18n import (
+    LANGUAGE_SETTINGS_KEY, current_language, language_options, tf, tr,
+)
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import QRectF, QSettings, Qt, QTimer
+from PySide6.QtCore import QProcess, QRectF, QSettings, Qt, QTimer
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDockWidget, QDoubleSpinBox, QFileDialog,
-    QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
-    QMessageBox, QPushButton, QScrollArea, QSplitter, QTabWidget, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
+    QApplication, QCheckBox, QComboBox, QDialog, QDockWidget, QDoubleSpinBox,
+    QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
+    QMainWindow, QMessageBox, QPushButton, QScrollArea, QSplitter, QTabWidget,
+    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from ai.assistant import AIAssistant, AIOutcome
@@ -421,12 +425,50 @@ class MainWindow(QMainWindow):
             button.clicked.connect(handler)
             export_layout.addWidget(button)
         layout.addWidget(export_group)
+
+        language_group = QGroupBox(tr("界面语言"))
+        language_layout = QVBoxLayout(language_group)
+        self.language_combo = QComboBox()
+        for code, label in language_options():
+            self.language_combo.addItem(label, code)
+        index = self.language_combo.findData(current_language())
+        if index >= 0:
+            self.language_combo.setCurrentIndex(index)
+        self.language_combo.currentIndexChanged.connect(self._on_language_changed)
+        language_layout.addWidget(self.language_combo)
+        language_hint = QLabel(tr("切换后程序会自动重启以应用"))
+        language_hint.setWordWrap(True)
+        language_layout.addWidget(language_hint)
+        layout.addWidget(language_group)
+
         layout.addStretch()
         self._refresh_calibration_ui()
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(content)
         return scroll
+
+    def _on_language_changed(self, _index: int) -> None:
+        code = str(self.language_combo.currentData() or "")
+        if not code or code == current_language():
+            return
+        settings = QSettings()
+        settings.setValue(LANGUAGE_SETTINGS_KEY, code)
+        settings.sync()
+        self._restart_for_language()
+
+    def _restart_for_language(self) -> None:
+        """切语言后重启进程生效。
+
+        选择重启而不是逐个控件 retranslate：界面有上千条文案和一批模块级常量，
+        重刷逻辑漏一个控件就会中英混杂，而重启一次只有百毫秒的代价。
+        """
+        if QProcess.startDetached(sys.executable, sys.argv[1:]):
+            QApplication.quit()
+            return
+        QMessageBox.information(
+            self, tr("需要重启"),
+            tr("语言已保存。请手动关闭并重新打开程序以应用新语言。"))
 
     @staticmethod
     def _curve(color: str, width: int = 1, name: str | None = None) -> pg.PlotDataItem:

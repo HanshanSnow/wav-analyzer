@@ -23,6 +23,9 @@ LANG_EN = "en"
 
 DEFAULT_LANGUAGE = LANG_ZH
 
+# QSettings 里的键名。改默认语言不必换键，但换键会让老用户的语言选择回到默认。
+LANGUAGE_SETTINGS_KEY = "ui/language"
+
 _OPTIONS: tuple[tuple[str, str], ...] = (
     (LANG_ZH, "中文"),
     (LANG_EN, "English"),
