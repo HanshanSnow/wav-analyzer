@@ -78,10 +78,10 @@ def main() -> None:
     # 合并文件名保持默认：摘要里少一段文字，列表才不会横向滚动
     dialog.steps[2]["params"].update({"aggregate": "single"})
     dialog.steps[3]["params"].update({"aggregate": "single"})
-    dialog.files = [str(ROOT / "demo" / f"ref_1000Hz_D10_r{n}.wav") for n in (1, 2, 3)]
-    dialog.files += [str(ROOT / "demo" / f"size_P3_2000Hz_D10_r{n}.wav") for n in (1, 2)]
-    # 手册配图里不要出现本机绝对路径
-    dialog.output_dir.setText(r"D:\实验数据\batch_out")
+    dialog.files = [str(ROOT / "demo" / f"sample_1000Hz_r{n}.wav") for n in (1, 2, 3)]
+    dialog.files += [str(ROOT / "demo" / f"sample_2000Hz_r{n}.wav") for n in (1, 2)]
+    # 配图用中性路径：不暴露作者本机的目录结构与实验命名
+    dialog.output_dir.setText(r"D:\data\batch_out")
     dialog._refresh_list()
     dialog.step_list.setCurrentRow(3)
     # 列表默认 320 宽，放不下本实验的步骤摘要；配图里把分割条拉开

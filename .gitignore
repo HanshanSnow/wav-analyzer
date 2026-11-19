@@ -40,6 +40,15 @@ demo/selftest_result.json
 demo/handled/
 *.tmp
 
+# ---- 作者本地专用，不分发 ----
+# 这些是作者在自己实验里用的命令行脚本与内部计划文档，含特定实验设计，
+# 与通用程序无关，不随仓库发布。
+analyze.py
+analyze.bat
+record.py
+record.bat
+开发计划.md
+
 # ---- 编辑器 / 系统 ----
 .vscode/
 .idea/

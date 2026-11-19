@@ -1,43 +1,65 @@
-# WAV Analyzer — 声音实验 WAV 数据处理程序
+# WAV Analyzer
 
-**版本 1.5｜Windows 64 位｜MIT License**
+**English** · [简体中文](README.zh-CN.md)
 
-一个面向隔音箱开孔声音实验的桌面程序：读入 WAV，看波形、频谱与时频图，检测并修复冲击，裁剪与试听，拟合包络，算区间统计，把结果导出成定宽 TXT、统计 CSV、600 dpi 论文插图和独立 HTML 报告；上百个录音可以配成一条步骤脚本批量跑完。可选接一个大模型助手，用自然语言驱动上面的工具，但所有改动仍需你确认。
+![version](https://img.shields.io/badge/version-1.5-blue)
+![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey)
+![python](https://img.shields.io/badge/python-3.11%2B-3776AB)
+![license](https://img.shields.io/badge/license-MIT-green)
+![tests](https://img.shields.io/badge/tests-141%20passing-brightgreen)
 
-界面（波形与选区 / 傅立叶分析）：
+A Windows desktop application for turning acoustic measurement recordings into numbers you can defend. Open a WAV, inspect the waveform, spectrum and spectrogram, strip out transient hits, fit an envelope, compute interval statistics, and export fixed-width TXT, CSV, 600 dpi figures or a standalone HTML report — or push hundreds of files through a reusable batch script. An optional LLM assistant can drive the same tools in natural language, and every change it proposes still needs your confirmation.
 
-![主界面](docs/figures/00_waveform.png)
-![傅立叶分析](docs/figures/00_overview.png)
+Waveform and selection editor / Fourier analysis:
 
-**为什么做它**：声学实验的数据处理通常是「Excel 里抄数 + Origin 里画图」，口径不统一、抄错难发现。这个程序把窗函数、归一化、统计分析的定义固定在一处，界面读数、批量结果和导出报告用的是同一套算法，因此不需要再核对「两套数为什么对不上」。
+![Main window](docs/figures/00_waveform.png)
+![Fourier analysis](docs/figures/00_overview.png)
+
+**Why it exists.** Acoustic data processing is usually "copy numbers out of Excel, plot them in Origin". Conventions drift, transcription errors hide, and the number in the report stops matching the number in the tool. WAV Analyzer pins the window function, normalisation and statistical definitions in one place, so the on-screen readout, the batch output and the exported report all come from the same code path.
 
 ---
 
-## 一、运行方式
+## What it is good for
 
-### 方式 A：直接用打包好的程序（推荐）
+| Workload | What you get |
+|---|---|
+| Steady-state tone recordings (speaker, transducer, resonator characterisation) | RMS level, peak amplitude, crest factor, THD, harmonic table — measured over a selection you draw on the waveform |
+| Sweeps and chirps | Spectrogram with linear or log frequency axis; per-segment interval statistics |
+| Impulse responses and knock tests | Envelope fit (constant / linear / exponential) with equation, R² and RMSE |
+| Recordings contaminated by handling noise, clicks or clipping | Automatic transient detection, preview before commit, interpolation repair or exclusion |
+| Level comparison between two takes (with / without a sample, near / far, before / after treatment) | Two-channel mode: cross-correlation delay, per-channel level, level difference |
+| Dozens to hundreds of runs per session | Step-script batch pipeline with progress overlay, cancellable |
+| Figures and tables for a paper or report | 600 dpi paper-size PNG, fixed-width TXT, tidy CSV, HTML report |
 
-到 [Releases](../../releases) 下载 `WAV_Analyzer_分发包.zip`，解压后双击 `WAV Analyzer.exe`。无需安装 Python 或任何依赖。
+Nothing in the program is tied to a particular rig. If it is a WAV file with a signal in it, it loads.
 
-1. 建议单独建一个文件夹存放，例如 `WAV Analyzer`。
-2. 首次启动会稍慢（程序需解压内置组件到临时目录），属正常现象。
+---
 
-> 若 Windows 弹出“Windows 已保护你的电脑”提示，选择“更多信息”→“仍要运行”。这是因为程序未购买代码签名证书，并非病毒。可自行用杀毒软件扫描确认。
+## 1. Running it
 
-**命令行可选用法**：把 WAV 文件路径拖到 exe 图标上，或在命令行执行：
+### Option A — prebuilt binary (recommended)
+
+Download `WAV_Analyzer_v1.5_win64.zip` from [Releases](../../releases), unpack it, and double-click `WAV Analyzer.exe`. Python is not required.
+
+1. Unpack into its own folder, e.g. `WAV Analyzer`.
+2. The first launch is slower than later ones — the one-file build unpacks its bundled components into a temp directory. That is expected.
+
+> If Windows shows "Windows protected your PC", click **More info → Run anyway**. The binary is not code-signed; it is not malware. Scan it yourself if you like.
+
+**Optional command line usage** — drag a WAV onto the exe, or:
 
 ```
-"WAV Analyzer.exe" "D:\实验数据\sample.wav"
+"WAV Analyzer.exe" "D:\data\sample.wav"
 ```
 
-程序会直接载入该文件。
+The file loads on startup.
 
-### 方式 B：从源码运行
+### Option B — from source
 
-需要 Python 3.11 及以上（开发与测试在 3.13 上完成）。
+Python 3.11 or newer (developed and tested on 3.13).
 
 ```bash
-git clone <本仓库地址> wav-analyzer
+git clone <this-repo-url> wav-analyzer
 cd wav-analyzer
 
 python -m venv .venv
@@ -47,239 +69,251 @@ python -m venv .venv
 source .venv/bin/activate
 
 pip install -r requirements.txt
-python run_app.py            # 启动界面
+python run_app.py            # launch the GUI
 ```
 
-Windows 上也可以直接双击 `run_app.bat`（脚本会优先找 `py -3`，找不到就用 PATH 里的 `python`）。
+On Windows you can also double-click `run_app.bat`; it prefers `py -3` and falls back to `python` on PATH.
 
-## 二、开发与测试
+---
+
+## 2. Features
+
+| Area | Capability |
+|---|---|
+| Import | Mono or stereo WAV, quality check on load (peak, RMS, clipping warning), source file opened read-only |
+| Waveform | Trace, time cursor readout, blue selection, numeric time entry |
+| Spectrum | Linear amplitude or dBFS, linear or log frequency axis, phase spectrum |
+| Fourier analysis | Fundamental, peak amplitude, dominant spectral peaks, harmonics 1–8, THD |
+| Spectrogram | STFT distribution, for spotting broadband transients |
+| Transient repair | Detection with preview, discard preview, short-hit interpolation, long-hit exclusion, undo |
+| Playback & edit | Play selection or whole file, pause, crop to selection, write back to source (with automatic backup) |
+| Envelope | Hilbert envelope, constant / linear / exponential fit, equation, R², RMSE |
+| Interval statistics | 21 quantities shown as name + value + definition, including RMS, peak, peak-to-peak, crest factor, RMS level, THD |
+| Acoustic calibration | Convert dBFS to dB SPL from microphone sensitivity, preamp gain and ADC full-scale voltage, or from a known reference level; multiple profiles, carried into statistics and every export |
+| Two-channel | Cross-correlation delay, per-channel level, level difference, AGC warning |
+| AI assistant | DeepSeek / Moonshot / OpenAI presets or any OpenAI-compatible endpoint; whitelisted tool calls; user and assistant turns in distinct coloured bubbles; answers rendered as Markdown; repairs always need confirmation |
+| Export | Processed WAV, fixed-width analysis TXT, image PNG (paper or screen layout), statistics CSV, standalone HTML report |
+| Batch processing | Step script (repair / crop / envelope / statistics / five export types) applied to a multi-file selection, executed in the background behind a dimmed overlay with import and processing progress, cancellable |
+
+---
+
+## 3. Quick start
+
+1. Launch and click **Open WAV**.
+2. Drag the blue selection over the steady-state portion of the waveform.
+3. Switch to the **Fourier analysis** tab for fundamental, spectral peaks and THD.
+4. Switch to the **Spectrogram** tab and look for narrow vertical bands — those are transients.
+5. Back on the waveform tab, click **Detect and preview**. The orange trace is the repaired version; **Discard preview** leaves your data untouched, **Apply preview** commits it.
+6. Click **Compute interval statistics** for the full table (the third column defines each quantity). **Show envelope and fit selection** gives you the envelope equation.
+7. Use the playback group to listen to the selection; **Crop to selection** when you only care about one part of the response.
+8. Save results from the export panel: processed WAV, analysis TXT, PNG, CSV, HTML report. **Apply changes to source file…** is only for overwriting the original, and it writes a `.bak-<timestamp>.wav` next to it first.
+
+Full walkthrough and algorithm details are in the bundled manual.
+
+---
+
+## 4. Exporting into a report
+
+**Figures.** In the image export dialog pick *paper single column 3.5 × 2.45 in (600 dpi)* or *paper double column 7.0 × 2.6 in*. Paper layouts are generated at physical size, so dropping them into a two-column Word or LaTeX document needs no rescaling and the type size and line weights stay correct. Ticks point inward, all four spines are drawn, background is white, and the legend sits in a single row below the plot instead of on top of the curves. When single-column output has both envelope and fit enabled, the plot splits into two stacked panels automatically.
+
+**Numbers.** *Export analysis TXT…* produces a plain-text report in seven sections (envelope, Fourier, interval statistics, two-channel, AI notes, repair log, raw coordinates); unchecked sections are skipped and the numbering closes up. The whole file is space-aligned with no tab characters, and every column except the last is ASCII-only, so it stays aligned in any monospace font. The header carries the MD5 of the source WAV, so you can prove which recording a given export came from.
+
+The coordinate section is the longest. Before export choose *fixed points per second*, *decimate by stride*, or *all samples*; if you pick all samples and the output is projected above 5 million lines, the program asks once more.
+
+Reading it back: `pandas.read_csv(path, sep=r"\s+", comment="#")`; Excel uses *Data → Text to Columns → Fixed width*; Origin uses space-delimited and skips `#` lines.
+
+---
+
+## 5. Batch processing
+
+One session often produces dozens or hundreds of WAV files. **Batch processing…** is not a one-shot action but a reusable **step script**:
+
+1. **+ Add step** and pick a function from the dropdown — everything the single-file UI can do is there (transient repair, crop, envelope fit, interval statistics, two-channel, export WAV / analysis TXT / PNG / statistics CSV / HTML report).
+2. Configure each step's parameters on the right. Options that are meaningless for the current combination are greyed out (e.g. the merged-file name is irrelevant when exporting one TXT per file).
+3. **Select files to process** and multi-select WAVs. This step only records paths — it does not read the files, so selecting hundreds is instant.
+4. Set the output directory (blank = alongside the source files) and click **Start**.
+
+Three details worth knowing:
+
+- **Excitation frequency can come from the filename.** Set *known excitation frequency* to *frequency in filename* in the statistics step, and `run_1000Hz_r1.wav` yields 1000 Hz. A batch spanning several frequencies needs no per-file editing.
+- **TXT and CSV both merge.** With *merge into one TXT*, each file's full report (with its own source name, path and MD5) is appended in processing order under a single file list header. Merged CSV puts one file per line, ready for Origin.
+- **It will not freeze.** The main window dims and a card shows *Importing file (m/n): name* and *Processing file (m/n): name* above a total progress bar. **Cancel** stops after the file currently in flight, so you never get a half-written output.
+
+Scripts save and load as JSON; the last used steps and output directory are remembered across sessions. Source files always stay read-only, and output only goes to the output directory.
+
+---
+
+## 6. Acoustic calibration
+
+By default every amplitude the program shows is normalised to digital full scale (FS). dBFS is **not** sound pressure level, and the program never pretends otherwise — without a calibration it simply does not emit dB SPL.
+
+Calibration is a single additive offset applied to the level axis:
+
+```
+K = 20 · log10( Vfs / (G_lin · S · 20 µPa) )
+L_SPL = L_dBFS + K
+```
+
+where `S` is microphone sensitivity in V/Pa, `G_lin` the preamp gain as a linear factor, and `Vfs` the ADC full-scale voltage in Vrms. Example: 10 mV/Pa, 0 dB gain, 1 Vrms full scale gives `K = +133.98 dB`, so 94 dB SPL corresponds to −39.98 dBFS.
+
+There are three entry modes in the calibration dialog:
+
+- **Sensitivity + gain + full scale** — the formula above, for hardware you have a datasheet for.
+- **Reference level (two-point)** — play a stable source, read the level on a sound level meter and the dBFS in the program, and `K = L_ref − L_dBFS`. This bypasses the two least trustworthy parameters entirely, so it is often the better route when the datasheet is missing or the ADC full scale is unknown.
+- **Uncalibrated** — statistics stay in dBFS only.
+
+Profiles are named and stored, and the currently selected one applies to batch runs as well. Because `K` cancels in any difference of two levels, a level-difference result does not depend on calibration accuracy; calibration matters for *absolute* levels and for comparing batches recorded at different gain settings.
+
+**What it is not.** Calibration here is one constant offset. There is no frequency weighting (no dBA), no microphone frequency-response correction, and no validity for AGC-equipped hardware. If you need metrologically valid SPL, use a sound level meter with a current calibration certificate.
+
+---
+
+## 7. Notes and caveats
+
+1. **Source WAVs are read-only by default.** All editing happens in memory; you must save to write a new file. Only *Apply changes to source file…* overwrites the original, and it backs up to `.bak-<timestamp>.wav` in the same folder first. After a write-back the undo stack is cleared — that backup is your only way back.
+2. **Units.** dBFS is a level relative to digital full scale, not dB SPL. Statistics, CSV, TXT and the report only gain SPL fields once a calibration profile is active. **Recordings from AGC microphones or recordings that have clipped cannot be converted this way.**
+3. **Statistical conventions.** The third table column defines every quantity and its dimension. The usual confusions: peak amplitude is `max|x|` (always positive), peak-to-peak is `max−min` (about twice as large for a symmetric signal), RMS includes any DC offset, and crest factor is ≈1.414 for a sine. CSV exports keep English key names so scripts stay stable.
+4. **Repairs need review.** Automatic thresholds were validated on synthetic signals; on real data, preview first and confirm against the waveform and spectrogram. Long transients are excluded from statistics rather than replaced with invented signal.
+5. **AGC warning.** If the microphone uses a module with automatic gain control (e.g. MAX9814), the gain tracks the sound pressure, so an amplitude ratio no longer reflects a true pressure ratio. Level-difference conclusions must then be backed by a sound level meter or a reliable amplitude calibration, and the report has to state whether AGC was active.
+6. **AI safety.** The assistant can only call built-in whitelisted tools — never arbitrary code. Repairs require your confirmation and no dialog appears when nothing was detected. What is sent to the model is a numeric summary by default, not the full WAV. **The API key is stored in the Windows Credential Manager and WAV Analyzer never discloses it to anyone**: it goes into a request header only when talking to the Base URL you configured, and it never appears in exported TXT, CSV, images or reports.
+7. **Long files and numerical conventions.** Recordings of 15 minutes / 40 million samples and up are processed in chunks with a progress overlay; the UI stays responsive. Conventions to keep in mind when reporting:
+   - **RMS, peak, peak-to-peak, standard deviation and other energy statistics** always use every valid sample in the selection — no approximation.
+   - **Fundamental and THD** are computed on a centred window of about 5.5 s (262,144 points) by default, giving ≈0.18 Hz resolution at 48 kHz, to avoid holding the UI for minutes on very long files. The Fourier tab states the actual time span and point count it used; for high-precision steady-state work, re-check with the full-length path.
+   - **Waveform display, image export and spectrogram** are decimated for display only. Peaks and readouts are unchanged, and decimated data never enters any calculation.
+   - **Cursor envelope readout** uses a centre-symmetric window, so there is no systematic bias on steady-state signals.
+   - **Undo stack** keeps at most 4 levels, about 1.2 GB in total; older entries are dropped first.
+
+---
+
+## 8. Build, test, package
 
 ```bash
 pip install -r requirements.txt
 
-pytest -q                    # 全量 141 项
-pytest tests/test_batch.py   # 只跑批量流水线
+pytest -q                     # 141 tests
+pytest tests/test_batch.py    # batch pipeline only
 ```
 
-界面测试在无显示器的环境里需要 `QT_QPA_PLATFORM=offscreen`（Linux CI 尤其注意）：
+GUI tests need `QT_QPA_PLATFORM=offscreen` on machines without a display (Linux CI in particular):
 
 ```bash
 QT_QPA_PLATFORM=offscreen pytest -q
 ```
 
-改了代码后想看程序自检（不需要人工点界面）：
+Headless self-check after changing code — no clicking required:
 
 ```bash
 # Windows
 set WAV_ANALYZER_SELFTEST=demo\demo_tone.wav
 python run_app.py
-# 结果写在 demo/selftest_result.json
+# result is written to demo/selftest_result.json
 ```
 
-自检会跑一遍「载入 WAV → 傅立叶 → 统计 → 论文版式 PNG → TXT 导出 → 批量流水线 → Markdown 渲染 → 密钥库」，输出 `ok: true` 表示核心链路都通。
+It walks load WAV → Fourier → statistics → paper-layout PNG → TXT export → batch pipeline → Markdown rendering → keyring, and prints `ok: true` when the core chain is intact.
 
-### 打包成单文件 exe
+Single-file executable:
 
 ```bash
 pip install pyinstaller
 pyinstaller --noconfirm --clean WAV_Analyzer.spec
-# 产物：dist/WAV Analyzer.exe
+# product: dist/WAV Analyzer.exe
 ```
 
-`WAV_Analyzer.spec` 里显式收集了 PortAudio、libsndfile 与 keyring 的 Windows 后端——这三处是最容易漏的运行时依赖，缺了会分别报 "PortAudio library not found"、"cannot load library libsndfile" 和 `NoKeyringError`。
+`WAV_Analyzer.spec` explicitly collects PortAudio, libsndfile and the keyring Windows backend. Those three are the runtime dependencies most likely to be missed; without them you get `PortAudio library not found`, `cannot load library libsndfile`, and `NoKeyringError` respectively.
 
-### 生成文档配图
+Documentation screenshots:
 
 ```bash
-python docs/make_readme_shots.py    # 主界面截图
-python docs/make_batch_shots.py     # 批量处理对话框与进度遮罩
-python docs/make_ai_shots.py        # AI 设置与会话
-python demo/make_demo_tone.py       # 合成演示录音（1 s / 1000 Hz + 一处冲击）
+python docs/make_readme_shots.py    # main window
+python docs/make_batch_shots.py     # batch dialog and progress overlay
+python docs/make_ai_shots.py        # AI settings and chat
+python demo/make_demo_tone.py       # synthetic demo recording (1 s / 1000 Hz + one transient)
 ```
 
-抓图必须在原生 Windows 平台下跑（offscreen 平台查不到系统字体，中文会全变成方框），窗口会移到屏幕外再截图。
+Screenshot generation must run on a native Windows platform: under the offscreen platform the system fonts are unavailable and all Chinese text turns into boxes. Windows are moved off-screen and grabbed.
 
-## 三、目录结构
+---
+
+## 9. Project layout
 
 ```
-run_app.py            程序入口（含无界面自检分支）
-analyze.py            命令行批处理：读 WAV、滤波、互相关、RMS 电平、导出结果
-record.py             双通道录音工具
-WAV_Analyzer.spec     PyInstaller 打包配置
-requirements.txt      运行与测试依赖
+run_app.py            entry point (also hosts the headless self-check branch)
+WAV_Analyzer.spec     PyInstaller build config
+requirements.txt      runtime and test dependencies
 
-core/                 纯计算层，不依赖 Qt
-  audio_io.py           WAV 读写与质量检查
-  spectral.py           傅立叶分析、谱峰、谐波、THD
-  denoise.py            冲击检测与修复
-  editing.py            裁剪、包络拟合
-  statistics.py         21 项区间统计
-  calibration.py        声压级换算（灵敏度 / 前置增益 / 两点标定）
-  figure_export.py      图像导出（屏幕版式 / 论文版式）
-  txt_export.py         定宽 TXT 报告
-  report.py             HTML 报告
-  batch.py              批量流水线引擎（步骤声明 + 逐文件执行）
-app/                  桌面界面层（PySide6）
-  main_window.py        主窗口与交互
-  chat_view.py          AI 会话气泡视图
-  markdown_lite.py      Markdown → Qt 富文本（只用手册里的安全子集）
-  batch_dialog.py       批量脚本编辑
-  batch_progress.py     批量进度遮罩
-  settings_dialog.py    模型设置
-  calibration_dialog.py 声学校准设置
-  workers.py            后台线程
-ai/                   AI 助手
-  client.py             OpenAI 兼容接口客户端
-  assistant.py          提示词与工具循环
-  tools.py              白名单工具
-tests/                自动化测试（141 项）
-docs/                 使用手册（LaTeX 源 + PDF）与配图脚本
-demo/                 示例录音与截图；真实实验数据不进仓库
+core/                 pure computation, no Qt dependency
+  audio_io.py           WAV I/O and quality checks
+  spectral.py           Fourier analysis, spectral peaks, harmonics, THD
+  denoise.py            transient detection and repair
+  editing.py            cropping, envelope fitting
+  statistics.py         21 interval statistics
+  calibration.py        dBFS to dB SPL conversion (sensitivity / gain / two-point)
+  figure_export.py      image export (screen and paper layouts)
+  txt_export.py         fixed-width TXT reports
+  report.py             HTML reports
+  batch.py              batch pipeline engine (step declaration + per-file execution)
+app/                  desktop layer (PySide6)
+  main_window.py        main window and interaction
+  chat_view.py          AI conversation bubble view
+  markdown_lite.py      Markdown to Qt rich text (safe subset only)
+  batch_dialog.py       batch script editor
+  batch_progress.py     batch progress overlay
+  settings_dialog.py    model settings
+  calibration_dialog.py acoustic calibration dialog
+  workers.py            background threads
+ai/                   AI assistant
+  client.py             OpenAI-compatible client
+  assistant.py          prompt and tool loop
+  tools.py              whitelisted tools
+tests/                automated tests (141)
+docs/                 manual (LaTeX source + PDF) and screenshot scripts
+demo/                 synthetic demo recording and screenshots; real measurement data is never committed
 ```
 
----
-
-## 四、运行环境
-
-- 操作系统：Windows 10 / 11（64 位）
-- 内存：建议 8 GB 以上（处理数千万采样点的长录音时更需留意）
-- 无需联网即可使用全部手动分析功能；仅 AI 助手需要网络连接
-- 播放在有可用声卡的机器上工作，无输出设备时其余功能不受影响
-- 中文界面依赖系统自带的微软雅黑字体（Windows 10/11 默认具备）
-
-程序不会修改注册表，不会写入系统目录；AI 配置等设置保存在当前用户的应用数据目录，API Key 保存在 Windows 凭据管理器。原始 WAV 默认只读。
+Everything under `core/` is importable without Qt, so the same functions work in a script or a notebook. That is also why on-screen readouts, batch output and exported reports agree: all three call the same function.
 
 ---
 
-## 五、功能一览
+## 10. Troubleshooting
 
-| 类别 | 功能 |
-|------|------|
-| 数据导入 | 单/双声道 WAV，质量检查（峰值、RMS、削顶警告），原始文件只读 |
-| 波形显示 | 波形曲线、时间游标读数、蓝色选区、指定时间数值输入 |
-| 频谱分析 | 线性幅值谱 / dBFS、线性 / 对数频率轴、相位谱 |
-| 傅立叶分析 | 主频、峰值振幅、主要谱峰、1–8 次谐波、THD |
-| 时频图 | STFT 时频分布，用于识别冲击的宽带特征 |
-| 去噪 | 冲击检测与预览、关闭预览、短冲击插值修复、长冲击排除、撤销 |
-| 播放与编辑 | 播放选区或全文件、暂停、裁剪到选区、应用更改到源文件（自动备份） |
-| 包络 | Hilbert 包络，常数/线性/指数拟合，输出方程、R²、RMSE |
-| 区间统计 | 21 项统计量按“中文名 + 数值 + 含义”三列展示，含 RMS、峰值振幅、峰峰值、波峰因数、RMS 电平、THD 等 |
-| 声学校准 | 填麦克风灵敏度、前置增益与声卡满幅电压，或用已知声压级标定，得到 dBFS → dB SPL 的偏移量；可存多组配置，统计与导出自动带声压级 |
-| 双通道 | 互相关时延、两路电平、电平差、AGC 风险提示 |
-| AI 助手 | DeepSeek / Moonshot / OpenAI 厂商预设或自定义接口，白名单工具调用；提问与回答用不同底色气泡区分，回答按 Markdown 渲染；去噪需人工确认 |
-| 导出 | 处理后 WAV、分析数据 TXT（定宽对齐，可直接进 Excel / Origin / pandas）、图像 PNG（论文版式或屏幕版式）、统计 CSV、独立 HTML 数据处理报告 |
-| 批量处理 | 步骤脚本（去噪／裁剪／包络／统计／五种导出）+ 多选文件，后台逐个执行，虚化遮罩显示导入与处理进度，可中途取消 |
+- **Double-click does nothing / blocked** — see the SmartScreen note in section 1, or right-click and run as administrator.
+- **Chinese text shows as boxes** — install Microsoft YaHei (present by default on Windows 10/11).
+- **UI greyed out with a spinner** — background computation in progress. Wait; do not click repeatedly.
+- **Program exits immediately** — usually out of memory. Crop to the region of interest first, or close other memory-heavy applications.
+- **Write-back is refused** — the file is held by a player, a cloud sync client or antivirus, or is read-only. Close the holder and retry.
+- **No sound on playback** — no output device, system muted, or device in exclusive mode. The program resamples to the device rate and reports failure explicitly.
+- **AI connection fails** — 401/403 usually means a bad key or no balance, 404 usually means the Base URL is missing `/v1` or the model name is wrong, 429 is rate limiting. Prefer the vendor presets: a preset only needs an API key.
+- **AI request times out** — the default is 120 s, and reasoning models writing long answers can hit it. Raise the timeout to 300 s in model settings, or use a faster model.
+- **Cannot open a WAV** — it must be a `.wav` with PCM encoding, mono or stereo; keep the path reasonably short and free of exotic characters.
+
+A longer error table lives in the manual's troubleshooting chapter.
 
 ---
 
-## 六、快速上手
+## 11. Requirements
 
-1. 启动程序，点击左侧“打开 WAV”载入录音。
-2. 在波形图上拖动蓝色选区，框选稳态区间。
-3. 切到“傅立叶分析”页查看主频、谱峰与 THD。
-4. 切到“时频图”页观察是否存在短时宽带冲击竖条。
-5. 回到“波形与选区”页，点击“检测并预览”：橙色曲线为去噪预览；不满意点“关闭预览”丢弃（不改数据），确认无误后点“应用预览”。
-6. 点击“计算选区统计”查看各项指标（表格第三列给出每个统计量的含义）；点击“显示包络并拟合选区”得到包络方程。
-7. 需要试听时用“播放与编辑”分组播放选区；只关心某段响应时可先“裁剪到选区”，再重算统计量。
-8. 用左侧“导出”区保存处理后的 WAV、分析数据 TXT、图像 PNG、统计 CSV 和 HTML 报告。仅当你确实要覆盖原文件时才用“应用更改到源文件…”，程序会先在同目录生成 `.bak-时间戳.wav` 备份。
+- Windows 10 / 11, 64-bit
+- 8 GB RAM recommended, more if you routinely open tens of millions of samples
+- No network needed for any manual analysis feature; only the AI assistant requires a connection
+- Playback needs a working output device; everything else works without one
+- The Chinese UI relies on Microsoft YaHei, shipped with Windows 10/11
 
-详细步骤与原理见随附的《使用手册》。
+The program does not touch the registry or write to system directories. Settings live in the current user's application data directory; the API key lives in the Windows Credential Manager. Source WAVs are opened read-only.
 
 ---
 
-## 七、重要提示
+## 12. License and contributing
 
-1. **原始 WAV 默认只读**：所有编辑只作用于内存中的版本，需另存才会写出新文件。仅当你主动点击“应用更改到源文件…”时才会覆盖原文件，且程序会先在同目录生成 `.bak-时间戳.wav` 备份；写回后撤销栈清空，只能靠该备份还原。
-2. **单位区别**：dBFS 是相对数字满幅的电平，不等于声压级 dB SPL。程序默认只输出 dBFS；在左侧“声学校准”里配好灵敏度与前置增益（或用已知声压级标定）之后，统计表、CSV、TXT 与报告才会多出 dB SPL。**带 AGC 的麦克风和已削顶的录音不能这样换算**。
-3. **统计量口径**：表格第三列给出每项的定义与量纲。最容易混淆的是峰值振幅 `max|x|`（恒为正）、峰峰值 `max−min`（对称波形约为前者的 2 倍）、RMS（含直流分量）与波峰因数（正弦约 1.414）。CSV 导出仍使用英文键名，便于脚本处理。
-4. **去噪需复核**：自动阈值基于合成信号验证，真实数据请先预览、结合波形与时频图人工确认。长冲击会被排除出统计，不会凭空补造信号。
-5. **AGC 提醒**：若麦克风使用 MAX9814 等带自动增益的模块，幅值比不能直接用于计算隔声量。
-6. **AI 安全**：AI 只能调用内置白名单工具，不能执行任意代码；去噪必须经你确认，0 段时不会弹窗。上传给 AI 的默认是数值摘要，不是完整 WAV。**API Key 由 Windows 钥匙串（凭据管理器）保存，WAV Analyzer 不会向任何人透露它**：只在与你填写的 Base URL 通信时放进请求头，导出的 TXT/CSV/图片/报告里都没有它。
-7. **长音频与数值口径**：程序对超长录音（如 15 分钟、4000 万采样点以上）做了分块优化，计算期间显示“处理中”遮罩并报告进度，界面不会卡死。各类数据的计算口径如下，**请在报告时留意**：
-   - **RMS、峰值、峰峰值、标准差等能量统计量**：始终基于所选区间的**全部有效采样点**，精度不受影响。
-   - **主频与 THD**：为避免超长音频长时间占用，默认基于居中的约 5.5 秒窗口（262,144 点）计算，频率分辨率约 0.18 Hz @ 48 kHz。界面“傅立叶分析”页会明确标注实际分析的时间范围与点数。做高精度稳态标定时可另行用全量方式复核。
-   - **波形显示 / 图像导出 / 时频图**：仅做可视化抽稀，峰谷与读数不变，不参与任何数值计算。
-   - **游标包络读数**：使用中心对称窗口消除边缘误差，对稳态信号无系统偏差。
-   - **撤销栈**：最多保留 4 级、合计约 1.2 GB，超出后最早的记录自动丢弃。
+Released under the **MIT License** — see [LICENSE](LICENSE). Use it, modify it, redistribute it, commercially or otherwise; keep the copyright and licence notice.
+
+**Contributions that help:**
+
+- Tell us a signal class (sweep, impulse response, white-noise excitation, …) is handled with the wrong convention, and attach a small reproducible WAV.
+- For bugs, include program version, OS, reproduction steps and self-check output. "It won't open" alone is not actionable.
+- For a new statistic or export format, open an issue to agree on the definition first — the whole point is that one quantity has one definition.
+
+**Out of scope:** using this as a sound level meter or a sound power analyser. As described in section 6, calibration is a single offset — no frequency weighting, no microphone response correction, no validity for AGC hardware.
 
 ---
 
-## 八、文件清单
-
-分发包里只有三个文件：
-
-| 文件 | 说明 |
-|------|------|
-| `WAV Analyzer.exe` | 程序主体，双击运行 |
-| `README.md` | 本说明文件 |
-| `声音实验WAV处理程序使用手册_分发版.pdf` | 详细使用手册（含常见错误与处理） |
-
-从源码使用或贡献时，另外会用到：`LICENSE`（MIT 许可证）、`requirements.txt`（依赖）、`WAV_Analyzer.spec`（打包配置）、`docs/声音实验WAV处理程序使用手册_详细版.pdf`（含算法口径与实现细节的完整版）。
-
----
-
-## 九、故障排查
-
-- **双击无反应 / 被拦截**：见第一节的 Windows 保护提示处理；或右键以管理员身份运行。
-- **中文显示为方块**：确认系统已安装微软雅黑字体（Windows 10/11 默认具备）。
-- **大文件界面变灰、遮罩在转**：这是后台计算中的正常状态，等它结束即可，不要反复点击。
-- **程序直接退出**：多为内存不足。先裁剪到关注区间再分析，或关闭其它占内存程序。
-- **写回源文件提示拒绝访问**：文件被播放器、网盘同步或杀毒软件占用，或属性为只读；关闭占用程序后重试。
-- **点击播放没有声音**：无可用输出设备、系统静音或设备被独占。程序会自动按设备采样率重采样播放，失败时会给出提示。
-- **AI 连接失败**：401/403 多为 Key 或余额问题，404 多为 Base URL 少了 `/v1` 或模型名写错，429 为限流。优先用厂商预设（选预设只需填 API Key）。
-- **AI 请求超时**：默认等待 120 s，推理类模型写长回答时容易触顶；到“模型设置”把超时调到 300 s，或换更快的模型。
-- **打开 WAV 失败**：确认文件为标准 PCM 编码的 `.wav`，单声道或双声道；路径不宜过长或含生僻字符。
-
-更完整的错误对照表见手册“常见错误与处理”一章。
-
----
-
-## 十、写报告时怎么导出
-
-**图**：图像导出对话框的尺寸下拉框里选“论文单栏 3.5 × 2.45 in（600 dpi）”或“论文双栏 7.0 × 2.6 in”。论文版式按物理尺寸出图，插进 Word／LaTeX 双栏正文不用再缩放，字号和线宽不会失真；刻度朝内、四边齐全、白底，图例固定在图底一行，不压曲线。单栏且同时勾了包络与拟合时，程序会自动拆成上下两个子图。
-
-**数**：点“导出分析 TXT…”，得到一份纯文本分析报告，分七段（包络方程、傅里叶分析、区间统计、双通道、AI 说明、去噪记录、原坐标），不勾的段落自动跳过并重排编号。全文用定宽空格对齐、没有制表符，除末列外只含 ASCII，因此在任何等宽字体下逐列对齐。文件头附源 WAV 的 MD5 指纹，能核对这份导出对应哪次录音。
-
-坐标表是最长的一段，导出前可选“每秒固定点数”“按步长抽稀”或“全部采样点”；选全量且预计超过 500 万行时程序会再确认一次。
-
-导入方式：`pandas.read_csv(path, sep=r"\s+", comment="#")`；Excel 用“数据 → 分列 → 固定宽度”；Origin 选空格分隔并忽略 `#` 行。
-
----
-
-## 十一、批量处理
-
-一次实验往往几十上百个 WAV。左侧“批量处理…”不再是单文件操作，而是一条可以反复运行的**步骤脚本**：
-
-1. 点“＋ 新增步骤”，从下拉里挑功能——单文件能做的处理与导出都在里面（冲击去噪、裁剪、包络拟合、区间统计、双通道、导出 WAV／分析 TXT／图像 PNG／统计 CSV／HTML 报告）；
-2. 每个步骤在右侧设参数。当前参数组合下无意义的项会自动置灰（例如“每个文件一个 TXT”时，合并文件名用不上）；
-3. 点“选择待处理的文件”多选 WAV——这一步只记路径，不读文件，选几百个也是瞬时的；
-4. 设好输出目录（留空＝与源文件同目录），点“开始处理”。
-
-三个值得知道的细节：
-
-- **激励频率可以按文件名取**。区间统计步骤里把“已知激励频率”设成“文件名里的频率”，程序会从 `ref_1000Hz_D10_r1.wav` 里抓出 1000 Hz。一批文件跨多个频点时不用逐个改。
-- **TXT 与 CSV 都能合并**。选“合并为一个 TXT”时，每个文件的完整报告（含各自的源文件名、路径、MD5 指纹）按处理顺序依次接在同一个文件里，抬头有一份文件清单；CSV 合并则是一个文件一行，直接进 Origin。
-- **不会卡死**。处理后主界面会虚化，中间卡片同时显示“正在导入文件（m/n）：文件名”和“正在处理文件（m/n）：文件名”，下面是总进度条；点“取消”会在当前文件处理完后停下，不会留下半个文件。
-
-脚本可以“保存脚本／载入脚本”存成 JSON，下次同样的实验直接载入；关掉窗口也会记住上次的步骤与输出目录。源文件始终只读，导出只写到输出目录。
-
----
-
-## 十二、许可与贡献
-
-本项目以 **MIT License** 发布，见 [LICENSE](LICENSE)。可以自由使用、修改、再分发，包括商用；保留版权与许可声明即可。
-
-**欢迎的贡献**：
-
-- 说明某类信号（如扫频、脉冲响应、白噪声激励）的处理口径有问题，附一段可复现的小 WAV；
-- 报 bug 时附上「程序版本 + 系统 + 复现步骤 + 自检输出」，比只说“打不开”有用得多；
-- 新的统计量或导出格式，请先开 issue 讨论口径，避免同一种量出现两种定义。
-
-**不支持的方向**：把本程序当作声级计或声功率测量仪。声学校准只是“一个常数偏移”——不做频率计权（没有 dBA）、不补偿麦克风频响曲线、不适用于 AGC 设备。要出计量级声压级，请用声级计并定期送检。
-
-`core/` 下的计算模块不依赖 Qt，可以单独 `import` 用在脚本或 Notebook 里；这也是本程序能保证「界面读数 = 批量结果 = 导出报告」的原因——三处调的是同一个函数。
-
----
-
-*最初为大学物理实验的隔音箱开孔声波实验而写，后续扩展到通用的 WAV 数据处理。*
-
+*Built to make one lab's measurement pipeline reproducible, and written so any acoustic recording workflow can use it. Pull requests welcome.*
