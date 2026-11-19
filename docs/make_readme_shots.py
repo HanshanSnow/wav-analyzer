@@ -64,7 +64,7 @@ def main() -> None:
     window.move(-20000, -20000)
     window.show()
     # show 之后再 resize：先 resize 会被窗口管理器按屏幕可用区域回缩
-    window.resize(1600, 920)
+    window.resize(1840, 1500)
     QApplication.processEvents()
     print("实际窗口:", window.width(), "x", window.height())
 
@@ -81,7 +81,7 @@ def main() -> None:
     # 左侧控制栏按设计宽度摆正，否则会被挤成带横向滚动条的窄条
     central = window.centralWidget()
     if isinstance(central, QSplitter):
-        central.setSizes([392, 1160])
+        central.setSizes([470, 1370])
         QApplication.processEvents()
 
     # 状态栏会打印源文件全路径，换成本机路径会泄露到公开仓库里
