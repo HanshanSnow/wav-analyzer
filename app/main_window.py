@@ -5,7 +5,7 @@ from typing import Any
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import QRectF, Qt, QTimer
+from PySide6.QtCore import QRectF, QSettings, Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDockWidget, QDoubleSpinBox, QFileDialog,
     QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
@@ -17,6 +17,9 @@ from ai.assistant import AIAssistant, AIOutcome
 from ai.client import OpenAICompatibleClient
 from ai.tools import AnalysisTools
 from core.audio_io import AudioData, read_wav, write_wav
+from core.calibration import (
+    MODE_PARAMS, Calibration, dumps_profiles, find_profile, loads_profiles,
+)
 from core.denoise import DenoiseResult, detect_and_repair_impulses
 from core.dual_channel import analyze_dual_channel
 from core.editor import apply_to_source, trim_range
@@ -27,12 +30,15 @@ from core.figure_export import (
     KIND_LABELS, FigureOptions, render_spectrogram_png, render_spectrum_png, render_waveform_png,
 )
 from core.spectral import fourier_analysis, stft_spectrogram
-from core.statistics import interval_statistics, probe_time, statistics_rows
+from core.statistics import (
+    attach_calibration, interval_statistics, probe_time, statistics_rows,
+)
 from core.txt_export import file_md5, write_analysis_txt
 from .audio_player import AudioPlayer
 from .batch_dialog import BatchDialog
 from .batch_progress import BatchProgressOverlay, BatchWorker
 from .busy_overlay import BusyOverlay
+from .calibration_dialog import CalibrationDialog
 from .chat_view import ChatView
 from .image_export_dialog import (
     KIND_SPECTROGRAM, KIND_SPECTRUM, KIND_WAVE, ImageExportDialog, suggest_path,
@@ -61,11 +67,17 @@ def _analyze_channel(
     valid_mask: np.ndarray,
     start_s: float,
     end_s: float,
+    calibration: "Calibration | None" = None,
 ) -> dict:
-    """纯计算：在线程中运行，不触碰任何 Qt 对象。"""
+    """纯计算：在线程中运行，不触碰任何 Qt 对象。
+
+    calibration 必须由调用方在进入线程前取好（它来自界面上的下拉框），
+    线程里再去读 Qt 控件是非法的。
+    """
     fourier = fourier_analysis(samples, sample_rate, fundamental_frequency=fundamental)
     spectrogram = stft_spectrogram(samples, sample_rate)
-    stats = interval_statistics(samples, sample_rate, start_s, end_s, valid_mask, fundamental)
+    stats = interval_statistics(samples, sample_rate, start_s, end_s, valid_mask,
+                                fundamental, calibration=calibration)
     overview = _downsample_series(samples, sample_rate, OVERVIEW_COLUMNS)
     return {"fourier": fourier, "spectrogram": spectrogram, "statistics": stats, "overview": overview}
 
@@ -149,6 +161,9 @@ class MainWindow(QMainWindow):
         self.player.stateChanged.connect(self._on_play_state)
         self.player.failed.connect(lambda message: self.statusBar().showMessage(message, 6000))
         self._play_span: tuple[float, float] = (0.0, 0.0)
+        self.calibration_profiles: list[Calibration] = []
+        self.calibration_active = ""
+        self._load_calibrations()
         self._build_ui()
         self.busy = BusyOverlay(self)
         self.batch_overlay = BatchProgressOverlay(self)
@@ -162,6 +177,83 @@ class MainWindow(QMainWindow):
         central.setSizes([330, 1120])
         self.setCentralWidget(central)
         self._build_ai_dock()
+
+    # ---------------------------------------------------------------- 声学校准
+    def _load_calibrations(self) -> None:
+        stored = QSettings("PhysicsExperiment", "SoundWavAnalyzer")
+        profiles, active = loads_profiles(str(stored.value("calib/profiles", "") or ""))
+        self.calibration_profiles = profiles
+        self.calibration_active = active
+
+    def _save_calibrations(self, profiles: list[Calibration], active: str) -> None:
+        stored = QSettings("PhysicsExperiment", "SoundWavAnalyzer")
+        stored.setValue("calib/profiles", dumps_profiles(profiles, active))
+
+    def _ready_profiles(self) -> list[Calibration]:
+        return [item for item in self.calibration_profiles if item.ready]
+
+    def _current_calibration(self) -> Calibration | None:
+        """界面当前选中的校准；未选或参数不全时返回 None（此时不输出 dB SPL）。"""
+        combo = getattr(self, "calibration_combo", None)
+        if combo is None:
+            return None
+        name = combo.currentData()
+        if not name:
+            return None
+        item = find_profile(self.calibration_profiles, str(name))
+        return item if (item is not None and item.ready) else None
+
+    def _refresh_calibration_ui(self) -> None:
+        combo = getattr(self, "calibration_combo", None)
+        if combo is None:
+            return
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItem("未校准（只显示 dBFS）", "")
+        for item in self._ready_profiles():
+            combo.addItem(item.name, item.name)
+        index = combo.findData(self.calibration_active)
+        combo.setCurrentIndex(max(0, index))
+        combo.blockSignals(False)
+        self._update_calibration_label()
+
+    def _update_calibration_label(self) -> None:
+        item = self._current_calibration()
+        if item is None:
+            self.calibration_label.setText(
+                "未校准：统计只显示 dBFS。点“校准设置…”填入灵敏度或使用已知声压级标定后，"
+                "统计表会多出等效声压级与峰值声压级两行。")
+            return
+        offset = item.offset_db()
+        self.calibration_label.setText(f"K = {offset:+.2f} dB（dB SPL = dBFS + K）")
+
+    def _on_calibration_changed(self, _index: int = 0) -> None:
+        self.calibration_active = str(self.calibration_combo.currentData() or "")
+        self._update_calibration_label()
+        # 已有统计时就地重算 SPL：统计量本身没变，只是换了个加性偏移，不必重跑 FFT。
+        if self.statistics is not None:
+            self.statistics = attach_calibration(self.statistics, self._current_calibration())
+            self._fill_statistics_table(self.statistics)
+
+    def open_calibration_dialog(self) -> None:
+        current_dbfs = None
+        if self.statistics is not None:
+            value = self.statistics.get("rms_dbfs")
+            if isinstance(value, (int, float)):
+                current_dbfs = float(value)
+        dialog = CalibrationDialog(
+            self, profiles=self.calibration_profiles,
+            active=self.calibration_active, current_dbfs=current_dbfs)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        payload = dialog.result_payload()
+        self.calibration_profiles = payload["profiles"]
+        self.calibration_active = payload["active"]
+        self._save_calibrations(self.calibration_profiles, self.calibration_active)
+        self._refresh_calibration_ui()
+        if self.statistics is not None:
+            self.statistics = attach_calibration(self.statistics, self._current_calibration())
+            self._fill_statistics_table(self.statistics)
 
     def _control_panel(self) -> QWidget:
         content = QWidget()
@@ -186,6 +278,23 @@ class MainWindow(QMainWindow):
         file_layout.addWidget(open_button)
         file_layout.addLayout(form)
         layout.addWidget(file_group)
+
+        calibration_group = QGroupBox("声学校准")
+        calibration_layout = QVBoxLayout(calibration_group)
+        self.calibration_combo = QComboBox()
+        self.calibration_combo.setToolTip("选中的校准用于把 dBFS 换算成 dB SPL；未校准时只显示 dBFS")
+        self.calibration_combo.currentIndexChanged.connect(self._on_calibration_changed)
+        calibration_button = QPushButton("校准设置…")
+        calibration_button.clicked.connect(self.open_calibration_dialog)
+        calibration_row = QHBoxLayout()
+        calibration_row.addWidget(self.calibration_combo, 1)
+        calibration_row.addWidget(calibration_button)
+        self.calibration_label = QLabel()
+        self.calibration_label.setWordWrap(True)
+        self.calibration_label.setStyleSheet("color: #546e7a;")
+        calibration_layout.addLayout(calibration_row)
+        calibration_layout.addWidget(self.calibration_label)
+        layout.addWidget(calibration_group)
 
         batch_group = QGroupBox("批量处理")
         batch_layout = QVBoxLayout(batch_group)
@@ -309,6 +418,7 @@ class MainWindow(QMainWindow):
             export_layout.addWidget(button)
         layout.addWidget(export_group)
         layout.addStretch()
+        self._refresh_calibration_ui()
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(content)
@@ -549,6 +659,7 @@ class MainWindow(QMainWindow):
     def load_audio_async(self, path: str | Path) -> None:
         source = Path(path)
         fundamental = self.fundamental.value() or None
+        calibration = self._current_calibration()
 
         def work():
             audio = read_wav(source)
@@ -556,7 +667,8 @@ class MainWindow(QMainWindow):
             samples = audio.samples[:, 0]
             mask = np.ones(audio.samples.shape, dtype=bool)[:, 0]
             analysis = _analyze_channel(
-                samples, audio.sample_rate, fundamental, mask, 0.0, audio.duration)
+                samples, audio.sample_rate, fundamental, mask, 0.0, audio.duration,
+                calibration)
             analysis.update({"audio": audio, "quality": quality})
             return analysis
 
@@ -572,7 +684,8 @@ class MainWindow(QMainWindow):
         samples = audio.samples[:, 0]
         mask = np.ones(audio.samples.shape, dtype=bool)[:, 0]
         analysis = _analyze_channel(
-            samples, audio.sample_rate, self.fundamental.value() or None, mask, 0.0, audio.duration)
+            samples, audio.sample_rate, self.fundamental.value() or None, mask, 0.0, audio.duration,
+            self._current_calibration())
         analysis.update({"audio": audio, "quality": quality})
         self._apply_loaded(analysis)
 
@@ -648,10 +761,12 @@ class MainWindow(QMainWindow):
         mask = self.valid_mask[:, channel]
         sample_rate = self.audio.sample_rate
         fundamental = self.fundamental.value() or None
+        calibration = self._current_calibration()
         start_s, end_s = self.region.getRegion()
         return self.run_task(
             "正在重新分析当前声道…",
-            lambda: _analyze_channel(samples, sample_rate, fundamental, mask, start_s, end_s),
+            lambda: _analyze_channel(samples, sample_rate, fundamental, mask, start_s, end_s,
+                                     calibration),
             self._apply_analysis,
             hint="傅立叶谱、时频图与统计量",
         )
@@ -671,7 +786,8 @@ class MainWindow(QMainWindow):
         start_s, end_s = self.region.getRegion()
         payload = _analyze_channel(
             self.current_samples(), self.audio.sample_rate,
-            self.fundamental.value() or None, self.current_valid_mask(), start_s, end_s)
+            self.fundamental.value() or None, self.current_valid_mask(), start_s, end_s,
+            self._current_calibration())
         self._apply_analysis(payload)
 
     def _apply_analysis(self, payload: dict) -> None:
@@ -838,6 +954,7 @@ class MainWindow(QMainWindow):
             self.statistics = interval_statistics(
                 self.current_samples(), self.audio.sample_rate, start, end,
                 self.current_valid_mask(), self.fundamental.value() or None,
+                calibration=self._current_calibration(),
             )
             self._fill_statistics_table(self.statistics)
         except Exception as exc:
@@ -850,10 +967,12 @@ class MainWindow(QMainWindow):
         mask = self.current_valid_mask()
         sample_rate = self.audio.sample_rate
         fundamental = self.fundamental.value() or None
+        calibration = self._current_calibration()
         start, end = self.region.getRegion()
 
         def work():
-            return interval_statistics(samples, sample_rate, start, end, mask, fundamental)
+            return interval_statistics(samples, sample_rate, start, end, mask, fundamental,
+                                       calibration=calibration)
 
         def done(stats):
             self.statistics = stats
@@ -1006,13 +1125,14 @@ class MainWindow(QMainWindow):
         channel = self.channel_combo.currentIndex()
         sample_rate = self.audio.sample_rate
         fundamental = self.fundamental.value() or None
+        calibration = self._current_calibration()
         start, end = self.region.getRegion()
 
         def work():
             self._commit_denoise(result, channel)
             return _analyze_channel(
                 self.processed[:, channel], sample_rate, fundamental,
-                self.valid_mask[:, channel], start, end)
+                self.valid_mask[:, channel], start, end, calibration)
 
         def done(payload):
             self.edit_depth += 1
@@ -1438,6 +1558,8 @@ class MainWindow(QMainWindow):
             "trim_edits": self.edit_log.count("trim") if use_edited else 0,
             "dual": self.dual_result,
         }
+        # 校准在主线程取好再进线程：工作线程读界面控件是非法的
+        calibration = self._current_calibration()
 
         def work(progress=None):
             fourier = fourier_analysis(samples, sample_rate, fundamental_frequency=fundamental)
@@ -1452,6 +1574,7 @@ class MainWindow(QMainWindow):
                 envelope=envelope, envelope_times=envelope_times, envelope_span=span,
                 fit=fit, denoise=denoise, dual=payload["dual"], options=options,
                 fundamental=fundamental, valid_mask=mask, progress=progress,
+                calibration=calibration,
             )
 
         def done(result: dict):
@@ -1577,7 +1700,8 @@ class MainWindow(QMainWindow):
         """启动批量流水线。返回是否真的启动（供测试直接调用，不弹对话框）。"""
         if self.batch_worker is not None or not steps or not files:
             return False
-        worker = BatchWorker(files, steps, output_dir, self)
+        worker = BatchWorker(files, steps, output_dir, self,
+                             calibration=self._current_calibration())
         self.batch_worker = worker
         self.batch_overlay.cancelled.connect(worker.cancel)
         worker.staged.connect(self.batch_overlay.set_stage)

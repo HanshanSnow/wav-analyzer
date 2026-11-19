@@ -291,6 +291,7 @@ def _section_stats(
     options: TxtExportOptions,
     fundamental: float | None,
     position: int = 3,
+    calibration: Any | None = None,
 ) -> list[str]:
     duration = samples.size / sample_rate
     scopes = [s for s in options.stat_scopes if s in ("full", "region", "custom")]
@@ -314,7 +315,8 @@ def _section_stats(
             blocks.append(_note([("状态", "跳过"), ("原因", "区间超出音频范围")]))
             continue
         stats = interval_statistics(samples, sample_rate, start, end,
-                                    valid_mask=valid_mask, fundamental_frequency=fundamental)
+                                    valid_mask=valid_mask, fundamental_frequency=fundamental,
+                                    calibration=calibration)
         label = dict(STAT_SCOPES)[scope]
         blocks.append(_stats_block(stats, f"[{position}.{index}] {label}统计",
                                    f"{start:.6f} – {end:.6f} s"))
@@ -402,6 +404,13 @@ def _header(payload: dict[str, Any], options: TxtExportOptions) -> list[str]:
         ("文件指纹", f"MD5 {payload['md5']}（源 WAV 前 256 MB 的 MD5 前 16 位，"
                      f"用于核对本份导出与原始录音是否对应）"),
     ])
+    calibration = payload.get("calibration")
+    offset = calibration.offset_db() if calibration is not None and getattr(calibration, "ready", False) else None
+    if offset is None:
+        out += _note([("声学校准", "未配置；本报告只含 dBFS，不含 dB SPL")])
+    else:
+        out += _note([("声学校准", f"{calibration.name}；K = {offset:+.2f} dB（dB SPL = dBFS + K）")])
+        out += [f"#   限定：{text}" for text in getattr(calibration, "caveats", lambda: [])()]
     return out
 
 
@@ -487,6 +496,7 @@ def write_analysis_txt(
     progress: ProgressHook | None = None,
     append: bool = False,
     skip_footer: bool = False,
+    calibration: Any | None = None,
 ) -> dict[str, Any]:
     """把分析结果写成 TXT。返回 {path, rows, bytes, sections, stride}。
 
@@ -520,6 +530,7 @@ def write_analysis_txt(
         "denoise_edits": int(denoise_edits),
         "trim_edits": int(trim_edits),
         "md5": md5,
+        "calibration": calibration,
     }
     stride = options.coord_stride(sample_rate)
     layout: list[tuple[str, str]] = [(key, SECTION_LABELS[key]) for key in sections]
@@ -551,7 +562,7 @@ def write_analysis_txt(
                 emit(handle, _section_fourier(fourier))
             elif key == "stats":
                 emit(handle, _section_stats(data, sample_rate, valid_mask, options,
-                                            fundamental, position))
+                                            fundamental, position, calibration))
             elif key == "dual":
                 emit(handle, _section_dual(dual, payload["channels"]))
             elif key == "ai":

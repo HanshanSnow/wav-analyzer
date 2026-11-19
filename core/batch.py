@@ -14,7 +14,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Sequence
+from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 import numpy as np
 
@@ -28,6 +28,10 @@ from .figure_export import (
 )
 from .spectral import fourier_analysis, stft_spectrogram
 from .statistics import interval_statistics, statistics_rows
+
+if TYPE_CHECKING:
+    from .calibration import Calibration
+
 from .txt_export import (
     SECTION_ORDER, TxtExportOptions, file_md5, write_analysis_txt,
 )
@@ -425,9 +429,11 @@ class BatchResult:
 class _State:
     """一个文件的处理状态。数组只在该步真的改数据时才产生新副本。"""
 
-    def __init__(self, path: Path, audio: AudioData):
+    def __init__(self, path: Path, audio: AudioData, calibration: "Calibration | None" = None):
         self.path = path
         self.audio = audio
+        # 整批共用同一个校准：同一批录音的麦克风、增益、系统音量本来就该一致
+        self.calibration = calibration
         self.samples = np.array(audio.samples, dtype=np.float64, copy=True)
         self.mask = np.ones(self.samples.shape, dtype=bool)
         self.edits: list[str] = []
@@ -478,7 +484,7 @@ def _ensure_stats(state: _State, params: dict[str, Any]) -> dict[str, Any]:
         fundamental = resolve_fundamental(params or {}, state.path.name)
         state.stats = interval_statistics(
             state.channel_samples(0), state.sample_rate, start, end,
-            state.channel_mask(0), fundamental)
+            state.channel_mask(0), fundamental, calibration=state.calibration)
     return state.stats
 
 
@@ -662,6 +668,7 @@ def _export_txt(state: _State, params: dict[str, Any], ctx: dict[str, Any]) -> N
         dual=state.dual,
         options=options,
         fundamental=fundamental,
+        calibration=state.calibration,
         valid_mask=state.channel_mask(0),
         append=append,
         skip_footer=bool(str(params.get("aggregate", "file")) == "single"),
@@ -777,6 +784,7 @@ def run_batch(
     should_cancel: CancelHook | None = None,
     merged_txt_name: str | None = None,
     merged_csv_name: str | None = None,
+    calibration: "Calibration | None" = None,
 ) -> BatchResult:
     """按步骤脚本逐个处理文件。整个过程只读源文件，导出写到 output_dir。"""
     paths = [Path(item) for item in files]
@@ -838,7 +846,7 @@ def run_batch(
                                             error=f"{type(exc).__name__}: {exc}"))
             continue
 
-        state = _State(path, audio)
+        state = _State(path, audio, calibration)
         try:
             quality = audio.quality_report()[0]
             if quality["clipping_warning"]:

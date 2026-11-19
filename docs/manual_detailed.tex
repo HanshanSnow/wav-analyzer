@@ -11,6 +11,7 @@
 \usepackage{array}
 \usepackage{float}
 \usepackage{enumitem}
+\usepackage{needspace}
 \usepackage{xcolor}
 \usepackage{amsmath}
 \usepackage{fancyhdr}
@@ -50,7 +51,7 @@
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\small 声音实验 WAV 数据处理程序 · 详细使用手册}
-\fancyhead[R]{\small 版本 1.4}
+\fancyhead[R]{\small 版本 1.5}
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
 
@@ -65,7 +66,7 @@
 \vspace*{2.5cm}
 {\zihao{2}\heiti 声音实验 WAV 数据处理程序}\\[0.8cm]
 {\zihao{1}\heiti 详细使用手册}\\[1.2cm]
-{\large 版本 1.4}\\[0.3cm]
+{\large 版本 1.5}\\[0.3cm]
 {\large 2026 年 11 月 18 日}\\[0.6cm]
 {\large 安装位置：\texttt{D:\textbackslash WAV\_Analyzer}}\\[2.0cm]
 
@@ -110,6 +111,7 @@
   \item \textbf{AI 数据助手}：通过受控白名单工具调用上述本地算法，并生成处理说明；会话用不同底色的气泡区分提问、回答、提示与错误，回答按 Markdown 渲染。
   \item \textbf{编辑与写回}：裁剪到选区、撤销栈回退、应用更改到源文件（写回前自动生成备份）。
   \item \textbf{结果导出}：处理后 WAV、分析数据 TXT、图像 PNG（论文版式／屏幕版式）、统计 CSV 和独立 HTML 数据处理报告。
+  \item \textbf{声学校准}：填麦克风灵敏度与前置增益（或用已知声压级标定），把 dBFS 换算成 dB SPL；统计、CSV、TXT 与报告同步带声压级。
   \item \textbf{批量处理}：把上述步骤配成可保存的流水线整批执行；界面虚化并显示逐文件进度，结果可合并成一张 CSV 或一份 TXT。
 \end{itemize}
 
@@ -501,6 +503,124 @@ RMS 电平 (dBFS) & \texttt{rms\_dbfs} & $20\lg(\mathrm{RMS}/\mathrm{FS})$，满
 在实验报告中引用主频、THD 等频谱量时，应同时记录程序标注的分析窗口与点数，以便结果可复核。
 
 % ==================== 第 12 章 ====================
+\section{声学校准}
+
+\subsection{为什么需要校准}
+
+程序内部一切幅值都是相对数字满幅的：FS 表示 $|x|$ 相对满幅的比例，dBFS 是 $20\lg|x|$。比较同一次录音内部的两段信号，这套相对单位完全够用；但实验报告里常要给出绝对声压级，那必须把读数挂到具体的麦克风上。
+
+换算只需要一个加性常数。设麦克风灵敏度 $S$（V/Pa）、前置增益 $G$（线性倍数，$G=10^{G_\mathrm{dB}/20}$）、声卡 0\,dBFS 对应的输入电压 $V_\mathrm{fs}$，则
+
+\begin{equation}
+L_\mathrm{SPL} = L_\mathrm{dBFS} + K, \qquad
+K = 20\lg\frac{V_\mathrm{fs}}{G\,S\,p_0}, \qquad p_0 = 20\ \mu\mathrm{Pa}.
+\label{eq:calib}
+\end{equation}
+
+推导只有三步：输入电压 $V_\mathrm{adc} = V_\mathrm{fs}\cdot10^{L_\mathrm{dBFS}/20}$，声压 $p = V_\mathrm{adc}/(GS)$，再对 $p/p_0$ 取 20 倍对数。三处都是乘除，取对数后变成加减，所以整批数据共用同一个 $K$——校准一次，之后每加一行都是简单的加法。
+
+以常见驻极体话筒为例：$S=10$\,mV/Pa、无前置增益、声卡满幅 1\,Vrms，代入得 $K=+133.98$\,dB。验算：94\,dB SPL 恰好对应 1\,Pa，麦克风输出 10\,mV，相对 1\,Vrms 是 $-40$\,dBFS，$-40+133.98=93.98$，与标称值只差 0.02\,dB（四舍五入造成）。
+
+\subsection{两种输入方式}
+
+左侧“声学校准”分组里点“校准设置…”，打开图~\ref{fig:calib_params} 的对话框。$K$ 有两条来路，二者等效：
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.84\textwidth]{13_calibration.png}
+\caption{按硬件参数推算。绿色框实时给出 $K$，并反算出“94 dB SPL 大约对应多少 dBFS”，方便当场验算。}
+\label{fig:calib_params}
+\end{figure}
+
+\begin{itemize}
+  \item \textbf{按硬件参数推算}：填灵敏度、前置增益、声卡满幅输入电压。表~\ref{tab:calib_examples} 给出几种常见链路的 $K$，可用于核对填入的参数是否合理。
+  \item \textbf{按已知声压级标定}：拿一个声压级已知的声源（声级校准器，或已标定过的手机播放固定音），填它标称的声压级与程序读到的 dBFS，$K=L_\mathrm{ref}-L_\mathrm{dBFS}$。这条路不需要知道 $V_\mathrm{fs}$——而 $V_\mathrm{fs}$ 恰恰是民用声卡最不可靠的参数。
+\end{itemize}
+
+\begin{table}[htbp]
+\centering
+\caption{几种常见链路的校准偏移（$V_\mathrm{fs}$ 取标称值，实际可能有偏差）}
+{\small
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}p{2.4cm}>{\raggedright\arraybackslash}p{2.4cm}>{\raggedright\arraybackslash}p{1.9cm}>{\raggedright\arraybackslash}p{4.4cm}@{}}
+\toprule
+链路 & 灵敏度 & 前置增益 & $K$ / dB & 说明 \\
+\midrule
+驻极体 + 声卡 & 10 mV/Pa & 0 dB, 1 Vrms & 133.98 & 教科书基准 \\
+同上 + 前置放大 & 10 mV/Pa & 20 dB, 1 Vrms & 113.98 & 增益每加 20 dB，$K$ 少 20 \\
+高灵敏电容麦 & 50 mV/Pa & 0 dB, 1 Vrms & 120.00 & 灵敏度高 14 dB，$K$ 低 14 \\
+专业声卡 & 12.6 mV/Pa & 20 dB, 0.775 Vrms & 109.76 & 满幅取 $-2.2$ dB，$K$ 再低一点 \\
+\bottomrule
+\end{tabular}}
+\label{tab:calib_examples}
+\end{table}
+
+第二张图是标定方式（图~\ref{fig:calib_ref}）。点“取当前统计”会把当前选区的 RMS 电平直接填进“对应读数”，省得手抄；前提是先算过一次选区统计。
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.84\textwidth]{14_calibration_ref.png}
+\caption{按已知声压级标定。灵敏度与增益等参数此时隐藏，只留“已知声压级”与“对应读数”两行。}
+\label{fig:calib_ref}
+\end{figure}
+
+\begin{quote}
+\textbf{标定的正确做法}：把声源稳定地开到标称声压级（例如校准器套在麦克风上，94 dB SPL），录一段 3 秒以上；在程序里选中这段稳态区间、点“计算选区统计”，读出 RMS 电平；再到校准对话框选“按已知声压级标定”，点“取当前统计”。这条路的精度取决于声源本身是否可信，而不是声卡的参数。
+\end{quote}
+
+\subsection{校准如何影响结果}
+
+校准配置保存在本机（与 AI 设置同一处配置存储），可保存多个、按名称切换。切换配置时，\textbf{已经算好的统计会就地重算声压级}，不重新做 FFT——统计量本身没变，变的只是一个加性偏移，所以切换是瞬时的。
+
+几处输出的变化见表~\ref{tab:calib_outputs}。
+
+\begin{table}[htbp]
+\centering
+\caption{配置校准后各处的变化}
+{\small
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{3.4cm}>{\raggedright\arraybackslash}p{10.4cm}@{}}
+\toprule
+位置 & 变化 \\
+\midrule
+区间统计表 & 新增“峰值声压级”与“等效声压级”两行，紧跟在对应的 dBFS 行之后；末尾两行给出 $K$ 与配置名 \\
+统计 CSV & 多出 \texttt{peak\_spl}、\texttt{rms\_spl}、\texttt{calibration\_offset\_db} 三列，dBFS 列照旧保留 \\
+分析 TXT & 文件头增加“声学校准”一行（配置名与 $K$），并附三行限定条件；区间统计段同步多出两行 \\
+HTML 报告 & 统计表同步多出两行，页脚说明改为“按声学校准换算”，并注明未计频率计权 \\
+批量处理 & 整批共用主界面当前选中的那一组校准；CSV 与 TXT 的合并输出同样带声压级 \\
+\bottomrule
+\end{tabular}}
+\label{tab:calib_outputs}
+\end{table}
+
+\textbf{未配置校准时，程序不输出任何 dB SPL 字段}。这是有意的：填充一个看起来合理、实则没有标定依据的数字，比留空危险得多。
+
+\needspace{9\baselineskip}
+\subsection{什么情况下这个换算不成立}
+
+\begin{enumerate}
+  \item \textbf{带 AGC/ALC 的麦克风}（MAX9814 模块、多数 USB 会议麦）：增益随声压自动变化，$K$ 不是常数。这类设备只能做相对比较，不能给绝对声压级。
+  \item \textbf{录音已削顶}：削顶后 dBFS 被压平在 0 附近，反推的声压级系统性偏低。先看质量检查里的削顶警告。
+  \item \textbf{系统录音音量不是 100\%}：Windows 的输入音量是数字增益，等效于给 $G$ 多加一项。要么固定在 100\%，要么把这一项折进“前置增益”里一起填。
+  \item \textbf{声卡满幅电压未知或标称值不准}：这是参数推算最大的不确定度来源。有条件就改用已知声压级标定。
+  \item \textbf{需要频率计权的量}：程序给出的是不计权（Z 计权）的声压级，不是 dBA。要报 dBA 需在频域按 A 计权曲线加权后再积分。
+\end{enumerate}
+
+\subsection{一个完整的校准例子}
+
+以本实验的隔音箱透射测量为例，链路是“驻极体话筒 $\to$ 前置放大 30 dB $\to$ USB 声卡（满幅 1 Vrms）”，话筒灵敏度标称 12.6 mV/Pa：
+
+\begin{enumerate}
+  \item 算 $K$：$K = 133.98 - 20\lg(12.6/10) - 30 = 133.98 - 2.01 - 30 = 101.97$\,dB。
+  \item 在对话框里填 $S=12.6$、增益 30、满幅 1.0，确认绿框显示 $K=+101.97$\,dB。
+  \item 保存为“驻极体 +30 dB”，之后每次打开程序自动沿用。
+  \item 录一段已知声源（如 94 dB 校准器）复核：若程序读到 $-8.03$\,dBFS，则 $-8.03+101.97=93.94$，与标称值差 0.06\,dB，说明参数填得对。若差得多，改用标定方式直接用实测值定 $K$。
+  \item 批量处理 145 个文件时，主界面选中的这组校准会整批生效，CSV 里直接得到各测点的等效声压级与峰值声压级，再做 $\Delta L$ 相减就是隔声量。
+\end{enumerate}
+
+\begin{quote}
+\textbf{提醒}：$\Delta L$ 是两个声压级相减，$K$ 在相减时会抵消。所以只要整批用的是同一套硬件与增益，即使 $K$ 有 1\,dB 的偏差，隔声量仍然是准的。校准真正影响的是\textbf{绝对声压级}，以及跨不同增益批次的数据能否直接比较。
+\end{quote}
+
+% ==================== 第 13 章 ====================
 \section{双通道分析}
 
 \subsection{分析内容}
@@ -518,7 +638,7 @@ RMS 电平 (dBFS) & \texttt{rms\_dbfs} & $20\lg(\mathrm{RMS}/\mathrm{FS})$，满
 
 若录音设备使用 MAX9814 等带自动增益控制（AGC）的麦克风模块，麦克风增益会随声压变化自动调整，两路幅值比不再准确反映真实声压比。此时电平差不能直接视为隔声量。强度结论应结合声级计读数或可靠的幅值校准，且报告中必须注明 AGC 是否工作。
 
-% ==================== 第 13 章 ====================
+% ==================== 第 14 章 ====================
 \section{AI 数据助手}
 
 \subsection{模型配置}
@@ -621,7 +741,7 @@ AI 请求应用去噪时，程序弹一次确认框，写明事件段数、修�
 
 AI 不可用时，程序的手动分析、去噪、统计、批量处理与导出功能完全不受影响。
 
-% ==================== 第 14 章 ====================
+% ==================== 第 15 章 ====================
 \section{结果导出与报告}
 
 \subsection{五项导出功能}
@@ -810,7 +930,7 @@ t/s             x/FS   L/dBFS
 
 该报告由本程序独立生成，不参考工作区内其他实验报告的格式和内容。可以直接在浏览器中打开，也可以通过“打印 → 另存为 PDF”转换为 PDF 格式。
 
-% ==================== 第 15 章 ====================
+% ==================== 第 16 章 ====================
 \section{批量处理}
 
 \subsection{为什么需要批量}
@@ -936,7 +1056,7 @@ TXT 与 CSV 两种导出都提供“合并为一个文件”选项，这是批�
 
 真正的隔声量要用基准文件与测试文件相减得到：同一频率、同一距离下，用密封基准板的主频电平减去测试板的主频电平即得 $\Delta L$，再按 $\tau = 10^{-\Delta L/10}$ 换算透射系数。批量只负责把每个文件的电平算准、排整齐，配对相减交给表格软件，这样每一步都能回溯到具体文件。
 
-% ==================== 第 16 章 ====================
+% ==================== 第 17 章 ====================
 \section{推荐实验流程}
 
 
@@ -957,7 +1077,7 @@ TXT 与 CSV 两种导出都提供“合并为一个文件”选项，这是批�
 
 每一步的结论都应能回溯到对应的原始数据和算法参数。报告中应区分“直接测得”“算法估计”和“经校准换算”三类数据。
 
-% ==================== 第 17 章 ====================
+% ==================== 第 18 章 ====================
 \section{常见错误与处理}
 
 程序把所有异常都以弹窗形式报告，格式为“异常类型：具体消息”。例如文件被别的程序占用时，弹窗开头是 \texttt{PermissionError}，后面跟一句“另一个程序正在使用此文件”（\texttt{WinError 32}）。排查时请把这两部分一起记下来，再对照下表定位。
@@ -1027,7 +1147,7 @@ AI 提示“模型响应缺少 choices[0].message” & 返回内容不是 OpenAI
 
 检查 Base URL、模型名称、API Key、网络和超时设置。不要把 Key 写入报告、代码或聊天内容。AI 不可用时，程序的手动分析、去噪、统计和导出功能不受影响。
 
-% ==================== 第 18 章 ====================
+% ==================== 第 19 章 ====================
 \section{安全与数据管理}
 
 \begin{itemize}
@@ -1065,6 +1185,8 @@ TXT 大表阈值 & 500 万行 & 超过时导出前二次确认 \\
 批量稳健阈值 & 8.0 & 与单文件去噪同一算法 \\
 批量统计区间 & 全文件 & 可改去掉首尾或固定区间 \\
 批量 CSV 输出 & 合并为一个 & 一行一个文件，含 21 项统计量 \\
+校准偏移 K & 由参数推算 & 也可用已知声压级标定，二者等效 \\
+满幅输入电压 & 1.0 Vrms & 声卡最不确定的参数，有条件改用标定 \\
 AI 请求超时 & 120 s & 可调 5--600 s，连接阶段 15 s \\
 AI 回答渲染 & Markdown & 标题、列表、表格、代码与链接\\
 \bottomrule
@@ -1083,7 +1205,7 @@ AI 回答渲染 & Markdown & 标题、列表、表格、代码与链接\\
 \texttt{run\_app.bat} & Windows 启动脚本 \\
 \texttt{run\_app.py} & Python 启动入口 \\
 \texttt{app/} & 桌面界面模块（含 \texttt{txt\_export\_dialog.py} 导出设置、\texttt{batch\_dialog.py} 批量脚本编辑、\texttt{batch\_progress.py} 进度遮罩、\texttt{chat\_view.py} 会话气泡、\texttt{markdown\_lite.py} 轻量 Markdown 渲染） \\
-\texttt{core/} & 信号处理核心算法（含 \texttt{txt\_export.py} 文本导出排版、\texttt{batch.py} 批量流水线引擎） \\
+\texttt{core/} & 信号处理核心算法（含 \texttt{txt\_export.py} 文本导出排版、\texttt{batch.py} 批量流水线引擎、\texttt{calibration.py} 声压级换算） \\
 \texttt{ai/} & AI 助手与工具调用 \\
 \texttt{tests/} & 自动化测试（121 项，含批量流水线、会话气泡与 Markdown 渲染） \\
 \texttt{demo/} & 合成演示数据与报告样例 \\
@@ -1097,10 +1219,11 @@ AI 回答渲染 & Markdown & 标题、列表、表格、代码与链接\\
 
 \section{版本说明}
 
-本手册对应程序 1.4 版，安装位置为 \texttt{D:\textbackslash WAV\_Analyzer}，桌面已创建“WAV Analyzer”快捷方式。自动化测试共 121 项全部通过，覆盖核心算法、界面交互、大文件处理流水线、批量流水线、图像导出、文本导出与报告导出。自动去噪阈值已通过合成信号验证，但应用到真实实验数据时仍应结合波形、频谱和时频图复核。
+本手册对应程序 1.5 版，安装位置为 \texttt{D:\textbackslash WAV\_Analyzer}，桌面已创建“WAV Analyzer”快捷方式。自动化测试共 141 项全部通过，覆盖核心算法、界面交互、大文件处理流水线、批量流水线、声学校准、图像导出、文本导出与报告导出。自动去噪阈值已通过合成信号验证，但应用到真实实验数据时仍应结合波形、频谱和时频图复核。
 
 \begin{itemize}
   \item \textbf{1.4}：AI 助手改进——提问与回答改用不同底色的气泡并区分提示与错误，回答按 Markdown 渲染（标题、列表、表格、代码、链接）；去掉“是否用钥匙串保存 Key”的勾选框，改为固定用 Windows 钥匙串保存并声明不向任何人透露 Key；默认超时改为 120 s 并给超时、连接、鉴权失败分别给出提示；AI 去噪确认改为只问一次、0 段不再弹窗。
+  \item \textbf{1.5}：新增声学校准——按灵敏度/前置增益/满幅电压推算偏移 $K$，或用已知声压级标定；统计、CSV、TXT、HTML 报告与批量处理同步输出 dB SPL；未校准时不出声压级，避免给出无依据的数。
   \item \textbf{1.3}：新增批量处理——可保存的步骤脚本、多选文件只记路径、独立线程执行、主窗口模糊遮罩与逐文件进度、取消只在文件之间生效；TXT 与 CSV 支持“合并为一个文件”；修正步骤摘要把合并文件名也写成“后缀 xxx”的问题，长摘要改为折行显示。
   \item \textbf{1.2}：新增导出分析 TXT，七段结构、定宽 ASCII 对齐、坐标取法三选项、区间统计多选，并附源 WAV 的 MD5 指纹；图像导出新增论文版式（单栏 3.50$\times$2.45\,in、双栏 7.00$\times$2.60\,in、600 dpi、刻度朝内四边齐全、次刻度），图例统一移到坐标区外图底一行，包络与拟合在论文版式下自动拆为上下双图，包络线绘图时做 5\,ms 平滑；修复导出对话框默认版式与深色背景冲突的问题。
   \item \textbf{1.1}：新增裁剪、播放试听与应用更改到源文件；新增导出图像 PNG（波形、频谱、时频图，中文宋体 + 西文 Times New Roman 制图规范）；区间统计改为中文名、数值、含义三列；冲击检测改为分块计算，长音频不再出现假死与闪退，并增加处理进度提示；模型设置提供 DeepSeek、Moonshot、OpenAI 预设；手册新增“常见错误与处理”一章。

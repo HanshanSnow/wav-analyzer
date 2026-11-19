@@ -36,6 +36,7 @@ data/*.wav
 calib/*.wav
 *.wav.bak-*
 demo/batch_out/
+demo/selftest_result.json
 demo/handled/
 *.tmp
 

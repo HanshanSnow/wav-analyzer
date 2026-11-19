@@ -101,6 +101,12 @@ def _selftest(wav_path: Path) -> int:
         from ai.client import AISettings
 
         steps["ai_default_timeout_s"] = AISettings().timeout_s
+
+        # 声学校准：只验算一次偏移量，确认换算模块进了包且公式没被改坏
+        from core.calibration import Calibration
+
+        steps["calibration_offset_db"] = round(
+            Calibration(name="自检", sensitivity_mv_pa=10.0).offset_db(), 3)
         report["ok"] = True
     except Exception:
         report["error"] = traceback.format_exc()

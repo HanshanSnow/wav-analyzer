@@ -72,6 +72,15 @@ def build_report_html(
         f"<td>{html.escape(f'{value:.8g}' if isinstance(value, float) else str(value))}</td></tr>"
         for key, label, value, _note in statistics_rows(statistics)
     )
+    if "calibration_offset_db" in statistics:
+        name = html.escape(str(statistics.get("calibration_name", "")))
+        unit_note = (
+            f"幅值为数字满幅归一化单位；dB SPL 按声学校准「{name}」换算"
+            f"（K = {statistics['calibration_offset_db']:+.2f} dB），"
+            f"可靠性取决于该标定，未计频率计权，AGC 麦克风与削顶录音不适用。"
+        )
+    else:
+        unit_note = "幅值为数字满幅归一化单位，dBFS 不等于 dB SPL（未配置声学校准）。"
     fit_html = "未执行包络拟合"
     if envelope_fit:
         parameters = "，".join(f"{key} = {value:.8g}" for key, value in envelope_fit.parameters.items())
@@ -103,7 +112,7 @@ table{{border-collapse:collapse;width:100%;margin:12px 0}}th,td{{border:1px soli
 <h2>包络分析</h2>{fit_html}
 <h2>冲击检测与去噪记录</h2>{events_html}
 <h2>AI 分析说明</h2><div class="note">{narrative}</div>
-<p><small>本报告由声音实验 WAV 处理程序独立生成，未套用工作区中的任何既有实验报告。幅值为数字满幅归一化单位，dBFS 不等于 dB SPL。</small></p>
+<p><small>本报告由声音实验 WAV 处理程序独立生成，未套用工作区中的任何既有实验报告。{unit_note}</small></p>
 </body></html>"""
 
 

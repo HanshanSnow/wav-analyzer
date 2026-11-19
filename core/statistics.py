@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from .envelope import compute_envelope
 from .spectral import fourier_analysis
+
+if TYPE_CHECKING:
+    from .calibration import Calibration
 
 # 统计量按块累加：千万点级文件上若整段做 abs()/平方 会瞬时占用数百 MB，
 # 分块后峰值只与块大小有关，数值仍是同一套公式（求和、平方和、极值）。
@@ -81,6 +84,14 @@ STATISTIC_FIELDS: tuple[tuple[str, str, str], ...] = (
      "√(mean(x²))，包含直流分量；整周期正弦时 RMS = 峰值 ÷ √2 ≈ 0.707×峰值"),
     ("rms_dbfs", "RMS 电平 (dBFS)",
      "20·lg(RMS/FS)，满幅正弦约 −3.01 dBFS；dBFS 是数字满幅相对值，不等于 dB SPL"),
+    ("rms_spl", "等效声压级 (dB SPL)",
+     "RMS 电平 + 校准偏移 K；等效于该区间的能量平均声压级，仅在配置声学校准后出现"),
+    ("peak_spl", "峰值声压级 (dB SPL)",
+     "20·lg(峰值振幅) + K，未计频率计权，仅在配置声学校准后出现"),
+    ("calibration_offset_db", "校准偏移 K (dB)",
+     "dB SPL = dBFS + K；由灵敏度、前置增益与满幅电压推算，或由已知声压级标定得到"),
+    ("calibration_name", "校准配置",
+     "本次换算使用的校准名称；空表示未校准，此时不输出任何 dB SPL"),
     ("crest_factor", "波峰因数 (峰值/RMS)",
      "峰值振幅 ÷ RMS；正弦约 1.414，脉冲/冲击性越强该值越大"),
     ("main_frequency_hz", "主频 (Hz)",
@@ -131,6 +142,7 @@ def interval_statistics(
     end_s: float | None = None,
     valid_mask: np.ndarray | None = None,
     fundamental_frequency: float | None = None,
+    calibration: "Calibration | None" = None,
 ) -> dict[str, Any]:
     x = np.asarray(samples, dtype=np.float64).reshape(-1)
     if len(x) == 0:
@@ -178,7 +190,9 @@ def interval_statistics(
         )
     else:
         freq_note = "主频/THD 基于选区全部有效采样点"
-    return {
+    # 校准偏移 K：未配置或参数不全时为 None，此时不输出任何 dB SPL 字段。
+    # 宁可少给一列，也不要给一个看起来合理、实则没有标定依据的声压级。
+    result: dict[str, Any] = {
         "start_s": float((start + first_valid) / sample_rate),
         "end_s": float((start + last_valid + 1) / sample_rate),
         "requested_start_s": float(start_s),
@@ -201,6 +215,44 @@ def interval_statistics(
         "thd": fourier.thd,
         "analysis_scope": f"{energy_note}；{freq_note}",
     }
+    return attach_calibration(result, calibration)
+
+
+# SPL 字段键，attach_calibration 负责成对增删
+_SPL_KEYS = ("rms_spl", "peak_spl", "calibration_offset_db", "calibration_name")
+
+
+def attach_calibration(
+    stats: dict[str, Any],
+    calibration: "Calibration | None" = None,
+) -> dict[str, Any]:
+    """在统计结果上重算 dB SPL 字段。
+
+    单独抽出来是因为切换校准配置时不该重跑 FFT——统计量没变，变的只是偏移量。
+    返回新字典并保持原有键序：rms_spl 紧跟 rms_dbfs、peak_spl 紧跟 peak_amplitude，
+    这样表格、TXT、CSV 的列顺序在任何时候都一致。
+    """
+    offset = calibration.offset_db() if (calibration is not None and calibration.ready) else None
+
+    def spl_of(fs_value: float) -> float:
+        return float(offset + 20 * np.log10(max(float(fs_value), 1e-15)))
+
+    out: dict[str, Any] = {}
+    for key, value in stats.items():
+        if key in _SPL_KEYS:
+            continue
+        out[key] = value
+        if offset is None:
+            continue
+        if key == "peak_amplitude":
+            out["peak_spl"] = spl_of(value)
+        elif key == "rms_dbfs":
+            out["rms_spl"] = spl_of(stats.get("rms", 0.0))
+    if offset is not None:
+        # 追在末尾：这两个是换算依据，读者通常先看数、再回头核对怎么来的。
+        out["calibration_offset_db"] = float(offset)
+        out["calibration_name"] = str(calibration.name)
+    return out
 
 
 def probe_time(
