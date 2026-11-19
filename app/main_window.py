@@ -221,8 +221,7 @@ class MainWindow(QMainWindow):
         item = self._current_calibration()
         if item is None:
             self.calibration_label.setText(
-                "未校准：统计只显示 dBFS。点“校准设置…”填入灵敏度或使用已知声压级标定后，"
-                "统计表会多出等效声压级与峰值声压级两行。")
+                "未校准：统计只显示 dBFS。配好灵敏度或做一次标定后，统计表才会多出声压级两行。")
             return
         offset = item.offset_db()
         self.calibration_label.setText(f"K = {offset:+.2f} dB（dB SPL = dBFS + K）")
@@ -283,8 +282,12 @@ class MainWindow(QMainWindow):
         calibration_layout = QVBoxLayout(calibration_group)
         self.calibration_combo = QComboBox()
         self.calibration_combo.setToolTip("选中的校准用于把 dBFS 换算成 dB SPL；未校准时只显示 dBFS")
+        # 下拉里放的是配置名，别让它按最长名字把按钮挤掉
+        self.calibration_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.calibration_combo.setMinimumContentsLength(10)
         self.calibration_combo.currentIndexChanged.connect(self._on_calibration_changed)
         calibration_button = QPushButton("校准设置…")
+        calibration_button.setMinimumWidth(96)
         calibration_button.clicked.connect(self.open_calibration_dialog)
         calibration_row = QHBoxLayout()
         calibration_row.addWidget(self.calibration_combo, 1)
