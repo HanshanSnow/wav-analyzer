@@ -1,0 +1,48 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- 虚拟环境 ----
+.venv/
+venv/
+env/
+
+# ---- PyInstaller 构建产物 ----
+# 仓库只保留 spec 与源码；exe 走 GitHub Releases 发布
+build/
+dist/
+*.manifest
+
+# ---- LaTeX 中间产物 ----
+# 手册 PDF 保留（tex 是源，PDF 供直接下载）；中间的 aux/log/toc 不入库
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+docs/manual_detailed.pdf
+
+# ---- 本地数据与临时文件 ----
+# 真实实验录音、导出结果、临时验证目录一律不进仓库
+data/*.wav
+calib/*.wav
+*.wav.bak-*
+demo/batch_out/
+demo/handled/
+*.tmp
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store

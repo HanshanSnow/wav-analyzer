@@ -1,0 +1,15 @@
+# 统一行尾：源码在 Windows 上编辑，但不应把 CRLF 带进仓库
+* text=auto eol=lf
+
+# 明确二进制，避免 git 试图做换行转换
+*.wav   binary
+*.png   binary
+*.jpg   binary
+*.pdf   binary
+*.exe   binary
+*.zip   binary
+*.ico   binary
+
+# Windows 脚本保持 CRLF，否则 cmd 解析可能出问题
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
