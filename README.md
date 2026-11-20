@@ -39,7 +39,7 @@ Nothing in the program is tied to a particular rig. If it is a WAV file with a s
 
 ### Option A — prebuilt binary (recommended)
 
-Download `WAV_Analyzer_v1.6.1_win64.zip` from [Releases](../../releases), unpack it, and double-click `WAV Analyzer.exe`. Python is not required.
+Download `WAV_Analyzer_v1.6.1_win64.zip` from [Releases](https://github.com/HanshanSnow/wav-analyzer/releases), unpack it, and double-click `WAV Analyzer.exe`. Python is not required.
 
 1. Unpack into its own folder, e.g. `WAV Analyzer`.
 2. The first launch is slower than later ones — the one-file build unpacks its bundled components into a temp directory. That is expected.

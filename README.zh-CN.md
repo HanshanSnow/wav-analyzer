@@ -39,7 +39,7 @@
 
 ### 方式 A：直接用打包好的程序（推荐）
 
-到 [Releases](../../releases) 下载 `WAV_Analyzer_v1.6.1_win64.zip`，解压后双击 `WAV Analyzer.exe`。无需安装 Python 或任何依赖。
+到 [Releases](https://github.com/HanshanSnow/wav-analyzer/releases) 下载 `WAV_Analyzer_v1.6.1_win64.zip`，解压后双击 `WAV Analyzer.exe`。无需安装 Python 或任何依赖。
 
 1. 建议单独建一个文件夹存放，例如 `WAV Analyzer`。
 2. 首次启动会稍慢（单文件版需把内置组件解压到临时目录），属正常现象。
