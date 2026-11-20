@@ -2,11 +2,11 @@
 
 [English](README.md) · **简体中文**
 
-![version](https://img.shields.io/badge/version-1.6-blue)
+![version](https://img.shields.io/badge/version-1.6.1-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey)
 ![python](https://img.shields.io/badge/python-3.11%2B-3776AB)
 ![license](https://img.shields.io/badge/license-MIT-green)
-![tests](https://img.shields.io/badge/tests-150%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-154%20passing-brightgreen)
 
 处理声学测量 WAV 数据的 Windows 桌面程序：读入录音，看波形、频谱与时频图，检测并修复瞬时冲击，拟合包络，算区间统计，导出定宽 TXT、统计 CSV、600 dpi 论文插图和独立 HTML 报告；上百个录音可以配成一条步骤脚本批量跑完。可选接一个大模型助手，用自然语言驱动上面这些工具，但所有改动仍需你确认。
 
@@ -39,7 +39,7 @@
 
 ### 方式 A：直接用打包好的程序（推荐）
 
-到 [Releases](../../releases) 下载 `WAV_Analyzer_v1.6_win64.zip`，解压后双击 `WAV Analyzer.exe`。无需安装 Python 或任何依赖。
+到 [Releases](../../releases) 下载 `WAV_Analyzer_v1.6.1_win64.zip`，解压后双击 `WAV Analyzer.exe`。无需安装 Python 或任何依赖。
 
 1. 建议单独建一个文件夹存放，例如 `WAV Analyzer`。
 2. 首次启动会稍慢（单文件版需把内置组件解压到临时目录），属正常现象。
@@ -91,7 +91,7 @@ Windows 上也可以直接双击 `run_app.bat`（脚本会优先找 `py -3`，�
 | 区间统计 | 21 项统计量按“中文名 + 数值 + 含义”三列展示，含 RMS、峰值振幅、峰峰值、波峰因数、RMS 电平、THD 等 |
 | 声学校准 | 填麦克风灵敏度、前置增益与声卡满幅电压，或用已知声压级标定，得到 dBFS → dB SPL 的偏移量；可存多组配置，统计与导出自动带声压级 |
 | 双通道 | 互相关时延、两路电平、电平差、AGC 风险提示 |
-| AI 助手 | DeepSeek / Moonshot / OpenAI 厂商预设或任意 OpenAI 兼容接口，白名单工具调用；提问与回答用不同底色气泡区分，回答按 Markdown 渲染；去噪需人工确认 |
+| AI 助手 | DeepSeek / Moonshot / OpenAI 厂商预设或任意 OpenAI 兼容接口，白名单工具调用；提问与回答用不同底色气泡区分，回答按 Markdown 渲染；响应按流式接收，长报告不再撞超时；去噪需人工确认 |
 | 导出 | 处理后 WAV、分析数据 TXT（定宽对齐，可直接进 Excel / Origin / pandas）、图像 PNG（论文版式或屏幕版式）、统计 CSV、独立 HTML 数据处理报告 |
 | 批量处理 | 步骤脚本（去噪／裁剪／包络／统计／五种导出）+ 多选文件，后台逐个执行，虚化遮罩显示导入与处理进度，可中途取消 |
 | 界面语言 | 中文或 English，在左侧栏最底部切换；切换后程序自动重启生效。默认中文。导出报告的正文仍为中文，见第七节 |
@@ -192,7 +192,7 @@ L_SPL = L_dBFS + K
 ```bash
 pip install -r requirements.txt
 
-pytest -q                    # 全量 150 项
+pytest -q                    # 全量 154 项
 pytest tests/test_batch.py   # 只跑批量流水线
 ```
 
@@ -269,7 +269,7 @@ ai/                   AI 助手
   client.py             OpenAI 兼容接口客户端
   assistant.py          提示词与工具循环
   tools.py              白名单工具
-tests/                自动化测试（150 项）
+tests/                自动化测试（154 项）
 docs/                 使用手册（LaTeX 源 + PDF）与配图脚本
 demo/                 合成演示录音与截图；真实测量数据不进仓库
 ```

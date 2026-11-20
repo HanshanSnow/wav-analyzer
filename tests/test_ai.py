@@ -2,6 +2,7 @@ import json
 
 import httpx
 import numpy as np
+import pytest
 
 from ai.assistant import AIAssistant
 from ai.client import AISettings, OpenAICompatibleClient
@@ -27,6 +28,72 @@ def test_tools_return_real_statistics_and_denoise_is_preview_only():
     assert damaged[1000] == X[1000] + 0.8
     error = json.loads(tools.execute("not_registered", "{}"))
     assert "不允许" in error["error"]
+
+
+def test_streaming_accumulates_content_and_tool_call_fragments():
+    """服务端按 SSE 分片返回时，正文与 tool_calls 都要拼回完整消息。"""
+    def sse(chunks: list[dict]) -> bytes:
+        body = "".join("data: " + json.dumps(c) + "\n\n" for c in chunks)
+        return (body + "data: [DONE]\n\n").encode("utf-8")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content)
+        assert payload["stream"] is True
+        if payload["messages"][-1]["role"] == "user":
+            # 工具名整包到达，参数被切成两段
+            return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=sse([
+                {"choices": [{"delta": {"tool_calls": [{"index": 0, "id": "call-9", "type": "function",
+                                                       "function": {"name": "analyze_interval", "arguments": ""}}]}}]},
+                {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": '{"start_s": 0,'}}]}}]},
+                {"choices": [{"delta": {"tool_calls": [{"index": 0, "function": {"arguments": '"end_s": 0.1}'}}]}}]},
+            ]))
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=sse([
+            {"choices": [{"delta": {"content": "## 结论\n"}}]},
+            {"choices": [{"delta": {"content": "主频 1000 Hz"}}]},
+        ]))
+
+    client = OpenAICompatibleClient(
+        AISettings("https://example.test/v1", "test-model", "test-key"),
+        transport=httpx.MockTransport(handler),
+    )
+    outcome = AIAssistant(client).ask("分析主频", AnalysisTools(X, FS, "synthetic.wav"))
+    assert outcome.content == "## 结论\n主频 1000 Hz"
+    assert outcome.execution_log[0]["tool"] == "analyze_interval"
+    assert outcome.execution_log[0]["arguments"] == {"start_s": 0, "end_s": 0.1}
+    client.close()
+
+
+def test_non_stream_json_response_still_parsed():
+    """有的网关不认 stream=true，直接回整包 JSON，必须照样能解析。"""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "application/json"}, json={
+            "choices": [{"message": {"role": "assistant", "content": "整包回答"}}]})
+
+    client = OpenAICompatibleClient(
+        AISettings("https://example.test/v1", "test-model", "test-key"),
+        transport=httpx.MockTransport(handler),
+    )
+    assert client.chat([{"role": "user", "content": "hi"}])["content"] == "整包回答"
+    client.close()
+
+
+def test_timeout_message_reports_partial_progress():
+    """收到部分内容后超时，提示里要说明已收到多少字，方便判断是网络还是模型太慢。"""
+    def handler(request: httpx.Request) -> httpx.Response:
+        def gen():
+            yield b'data: {"choices":[{"delta":{"content":"half"}}]}\n\n'
+            raise httpx.ReadTimeout("stalled", request=request)
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, content=gen())
+
+    client = OpenAICompatibleClient(
+        AISettings("https://example.test/v1", "test-model", "test-key", timeout_s=120),
+        transport=httpx.MockTransport(handler),
+    )
+    with pytest.raises(RuntimeError) as info:
+        client.chat([{"role": "user", "content": "写报告"}])
+    assert "超时" in str(info.value)
+    assert "4 字" in str(info.value)
+    client.close()
 
 
 def test_openai_compatible_tool_call_loop():

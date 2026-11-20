@@ -99,6 +99,28 @@ def test_placeholders_match_between_languages():
         assert zh_names == en_names, "占位符不一致：%r → %r" % (zh, en)
 
 
+def test_restart_env_drops_pyinstaller_temp_pointers():
+    """重启子进程前必须剥掉 onefile 的临时目录指针。
+
+    否则新进程会复用旧进程的 _MEIxxxx，旧进程退出时删不掉，
+    用户会看到 "Failed to remove temporary directory" 警告。
+    """
+    from app.main_window import _pyinstaller_free_env
+
+    env = {
+        "PATH": "/usr/bin",
+        "_PYI_APPLICATION_HOME_DIR": r"C:\Temp\_MEI000035bc2",
+        "_PYI_ARCHIVE_FILE": r"C:\Temp\_MEI000035bc2\WAV Analyzer.exe",
+        "_MEIPASS2": r"C:\Temp\_MEI000035bc2",
+        "_PYI_PARENT_PROCESS_LEVEL": "1",
+    }
+    cleaned = _pyinstaller_free_env(env)
+
+    assert cleaned == {"PATH": "/usr/bin"}
+    # 源码方式运行时本来就没有这些变量，不能凭空造出来
+    assert _pyinstaller_free_env({"PATH": "/usr/bin"}) == {"PATH": "/usr/bin"}
+
+
 def test_english_ui_has_no_chinese_leftovers():
     """英文模式下构建主窗口，按钮、分组、页签都不能残留中文。"""
     from app.main_window import MainWindow

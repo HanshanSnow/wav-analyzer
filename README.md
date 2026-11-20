@@ -2,11 +2,11 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-![version](https://img.shields.io/badge/version-1.6-blue)
+![version](https://img.shields.io/badge/version-1.6.1-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey)
 ![python](https://img.shields.io/badge/python-3.11%2B-3776AB)
 ![license](https://img.shields.io/badge/license-MIT-green)
-![tests](https://img.shields.io/badge/tests-150%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-154%20passing-brightgreen)
 
 A Windows desktop application for turning acoustic measurement recordings into numbers you can defend. Open a WAV, inspect the waveform, spectrum and spectrogram, strip out transient hits, fit an envelope, compute interval statistics, and export fixed-width TXT, CSV, 600 dpi figures or a standalone HTML report — or push hundreds of files through a reusable batch script. An optional LLM assistant can drive the same tools in natural language, and every change it proposes still needs your confirmation.
 
@@ -39,7 +39,7 @@ Nothing in the program is tied to a particular rig. If it is a WAV file with a s
 
 ### Option A — prebuilt binary (recommended)
 
-Download `WAV_Analyzer_v1.6_win64.zip` from [Releases](../../releases), unpack it, and double-click `WAV Analyzer.exe`. Python is not required.
+Download `WAV_Analyzer_v1.6.1_win64.zip` from [Releases](../../releases), unpack it, and double-click `WAV Analyzer.exe`. Python is not required.
 
 1. Unpack into its own folder, e.g. `WAV Analyzer`.
 2. The first launch is slower than later ones — the one-file build unpacks its bundled components into a temp directory. That is expected.
@@ -91,7 +91,7 @@ On Windows you can also double-click `run_app.bat`; it prefers `py -3` and falls
 | Interval statistics | 21 quantities shown as name + value + definition, including RMS, peak, peak-to-peak, crest factor, RMS level, THD |
 | Acoustic calibration | Convert dBFS to dB SPL from microphone sensitivity, preamp gain and ADC full-scale voltage, or from a known reference level; multiple profiles, carried into statistics and every export |
 | Two-channel | Cross-correlation delay, per-channel level, level difference, AGC warning |
-| AI assistant | DeepSeek / Moonshot / OpenAI presets or any OpenAI-compatible endpoint; whitelisted tool calls; user and assistant turns in distinct coloured bubbles; answers rendered as Markdown; repairs always need confirmation |
+| AI assistant | DeepSeek / Moonshot / OpenAI presets or any OpenAI-compatible endpoint; whitelisted tool calls; user and assistant turns in distinct coloured bubbles; answers rendered as Markdown; streamed responses so long reports no longer hit the timeout; repairs always need confirmation |
 | Export | Processed WAV, fixed-width analysis TXT, image PNG (paper or screen layout), statistics CSV, standalone HTML report |
 | Batch processing | Step script (repair / crop / envelope / statistics / five export types) applied to a multi-file selection, executed in the background behind a dimmed overlay with import and processing progress, cancellable |
 | Interface language | Chinese or English, switchable at the bottom of the sidebar; the program restarts itself to apply the change. Chinese is the default. Exported reports keep Chinese section headings — see section 7. |
@@ -192,7 +192,7 @@ Profiles are named and stored, and the currently selected one applies to batch r
 ```bash
 pip install -r requirements.txt
 
-pytest -q                     # 150 tests
+pytest -q                     # 154 tests
 pytest tests/test_batch.py    # batch pipeline only
 ```
 
@@ -269,7 +269,7 @@ ai/                   AI assistant
   client.py             OpenAI-compatible client
   assistant.py          prompt and tool loop
   tools.py              whitelisted tools
-tests/                automated tests (150)
+tests/                automated tests (154)
 docs/                 manual (LaTeX source + PDF) and screenshot scripts
 demo/                 synthetic demo recording and screenshots; real measurement data is never committed
 ```

@@ -9,6 +9,11 @@
   _soundfile_data    -> libsndfile DLL（读写 WAV，缺了会 "cannot load library libsndfile"）
 二者都是普通包，用 collect_all 一次性收齐数据与子模块。
 keyring 在 Windows 上必须带上 backends.Windows，否则保存 API Key 会报 NoKeyringError。
+
+PySide6 的 Qt 子模块里有一批是 pyqtgraph 用 importlib 动态拼名字导入的
+（``importlib.import_module(f"{QT_LIB}.QtOpenGL")``），静态分析看不见，
+必须显式写进 hiddenimports，否则打出来的 exe 一启动就
+"No module named 'PySide6.QtOpenGL'"。
 """
 
 import os
@@ -32,6 +37,16 @@ hiddenimports += [
     "soundfile",
     "keyring.backends.Windows",
 ] + collect_submodules("keyring.backends")
+
+# pyqtgraph 用字符串拼出模块名再 importlib 导入，静态分析抓不到，必须手写。
+# QtOpenGL / QtOpenGLWidgets 是 PlotCurveItem 与 RawImageWidget 的硬依赖：
+# 少了它，exe 在 import app.main_window 时就崩，界面根本起不来。
+hiddenimports += [
+    "PySide6.QtOpenGL",
+    "PySide6.QtOpenGLWidgets",
+    "PySide6.QtSvg",
+    "pyqtgraph.Qt.OpenGLHelpers",
+]
 
 a = Analysis(
     ["run_app.py"],

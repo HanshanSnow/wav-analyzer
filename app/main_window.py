@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 
 from core.i18n import (
@@ -119,6 +120,25 @@ def _compute_envelope_fit(
         "fit_times": times[indices],
         "span": (start, end),
     }
+
+
+_PYI_ENV_PREFIX = "_PYI_"
+_PYI_ENV_EXACT = ("_MEIPASS2",)
+
+
+def _pyinstaller_free_env(environ: dict[str, str] | None = None) -> dict[str, str]:
+    """去掉 PyInstaller onefile 引导器写进环境变量的临时目录指针。
+
+    打包成单文件运行时，引导器把解压目录塞进 ``_PYI_APPLICATION_HOME_DIR``
+    等变量，子进程据此复用同一个目录、不再自己解压。重启语言时如果原样继承，
+    新进程会继续占用旧进程的 ``_MEIxxxx``，旧进程退出时删不掉，
+    于是弹出 "Failed to remove temporary directory"。这里把指针剥掉，
+    让新进程自己解压一份，两边互不影响。源码方式运行时这些变量本来就不存在，
+    函数是无副作用的空操作。
+    """
+    source = os.environ if environ is None else environ
+    return {key: value for key, value in source.items()
+            if key not in _PYI_ENV_EXACT and not key.startswith(_PYI_ENV_PREFIX)}
 
 
 class MainWindow(QMainWindow):
@@ -463,7 +483,18 @@ class MainWindow(QMainWindow):
         选择重启而不是逐个控件 retranslate：界面有上千条文案和一批模块级常量，
         重刷逻辑漏一个控件就会中英混杂，而重启一次只有百毫秒的代价。
         """
-        if QProcess.startDetached(sys.executable, sys.argv[1:]):
+        # 临时把 PyInstaller 的临时目录指针从环境里拿掉，让新进程独立解压，
+        # 否则退出时旧目录删不掉会弹警告。startDetached 用当前环境块启动子进程，
+        # 所以复制一份、改完立刻还原即可。
+        saved = dict(os.environ)
+        try:
+            os.environ.clear()
+            os.environ.update(_pyinstaller_free_env(saved))
+            started = QProcess.startDetached(sys.executable, sys.argv[1:])
+        finally:
+            os.environ.clear()
+            os.environ.update(saved)
+        if started:
             QApplication.quit()
             return
         QMessageBox.information(

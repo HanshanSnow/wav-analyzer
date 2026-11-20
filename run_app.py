@@ -129,6 +129,27 @@ def _selftest(wav_path: Path) -> int:
         steps["i18n_ok"] = tr("打开 WAV") == "Open WAV"
         set_language(LANG_ZH)
         steps["i18n_ok"] = steps["i18n_ok"] and tr("打开 WAV") == "打开 WAV"
+
+        # 界面模块连同 pyqtgraph 的 Qt 子模块一起 import 一遍。
+        # 这些子模块是 importlib 拼字符串导入的，静态分析看不见，最容易漏打；
+        # 以前自检只跑算法链路，漏了 QtOpenGL 也照样报 ok，结果 exe 一启动就崩。
+        import pyqtgraph  # noqa: F401
+
+        from pyqtgraph.Qt import OpenGLHelpers  # noqa: F401
+        from PySide6 import QtOpenGL, QtOpenGLWidgets  # noqa: F401
+
+        steps["pyqtgraph_version"] = pyqtgraph.__version__
+        steps["qt_opengl"] = f"{QtOpenGL.__name__} / {QtOpenGLWidgets.__name__}"
+        import app.main_window  # noqa: F401
+
+        steps["gui_import"] = "ok"
+
+        # 再往前一步：真正把主窗口建出来。import 通过不代表能画——Qt 平台插件
+        # （qwindows.dll）、图标资源、样式表缺失都要到这一步才暴露。
+        QApplication.instance() or QApplication(sys.argv[:1])
+        window = app.main_window.MainWindow()
+        steps["gui_window"] = f"{window.windowTitle()} / {window.tabs.count()} 个页签"
+        window.deleteLater()
         report["ok"] = True
     except Exception:
         report["error"] = traceback.format_exc()
