@@ -109,7 +109,7 @@ Windows 上也可以直接双击 `run_app.bat`（脚本会优先找 `py -3`，�
 7. 需要试听时用“播放与编辑”分组播放选区；只关心某段响应时可先“裁剪到选区”，再重算统计量。
 8. 用左侧“导出”区保存处理后的 WAV、分析数据 TXT、图像 PNG、统计 CSV 和 HTML 报告。仅当你确实要覆盖原文件时才用“应用更改到源文件…”，程序会先在同目录生成 `.bak-时间戳.wav` 备份。
 
-详细步骤与原理见随附的《使用手册》。
+详细步骤与原理见手册：[**中文**（`docs/manual_zh.pdf`，45 页）](docs/manual_zh.pdf) · [**English**（`docs/manual_en.pdf`，57 页）](docs/manual_en.pdf)。
 
 ---
 
@@ -270,7 +270,7 @@ ai/                   AI 助手
   assistant.py          提示词与工具循环
   tools.py              白名单工具
 tests/                自动化测试（155 项）
-docs/                 使用手册（LaTeX 源 + PDF）与配图脚本
+docs/                 使用手册（manual_zh.pdf / manual_en.pdf + LaTeX 源）与配图脚本
 demo/                 合成演示录音与截图；真实测量数据不进仓库
 ```
 

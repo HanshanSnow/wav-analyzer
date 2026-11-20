@@ -109,7 +109,7 @@ On Windows you can also double-click `run_app.bat`; it prefers `py -3` and falls
 7. Use the playback group to listen to the selection; **Crop to selection** when you only care about one part of the response.
 8. Save results from the export panel: processed WAV, analysis TXT, PNG, CSV, HTML report. **Apply changes to source file…** is only for overwriting the original, and it writes a `.bak-<timestamp>.wav` next to it first.
 
-Full walkthrough and algorithm details are in the bundled manual.
+Full walkthrough and algorithm details are in the manual: [**English** (`docs/manual_en.pdf`, 57 pp.)](docs/manual_en.pdf) · [**中文** (`docs/manual_zh.pdf`, 45 pp.)](docs/manual_zh.pdf).
 
 ---
 
@@ -270,7 +270,7 @@ ai/                   AI assistant
   assistant.py          prompt and tool loop
   tools.py              whitelisted tools
 tests/                automated tests (155)
-docs/                 manual (LaTeX source + PDF) and screenshot scripts
+docs/                 manual (manual_en.pdf / manual_zh.pdf + LaTeX source) and screenshot scripts
 demo/                 synthetic demo recording and screenshots; real measurement data is never committed
 ```
 
