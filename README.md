@@ -56,7 +56,7 @@ The file loads on startup.
 
 ### Option B — from source
 
-Python 3.11 or newer (developed and tested on 3.13).
+Python 3.11 or newer (verified on 3.13 and 3.14).
 
 ```bash
 git clone <this-repo-url> wav-analyzer
@@ -72,7 +72,7 @@ pip install -r requirements.txt
 python run_app.py            # launch the GUI
 ```
 
-On Windows you can also double-click `run_app.bat`; it prefers `py -3` and falls back to `python` on PATH.
+On Windows you can also double-click `run_app.bat`; it prefers the project's `.venv`, then `py -3`, then `python` on PATH.
 
 ---
 

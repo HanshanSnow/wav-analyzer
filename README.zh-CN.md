@@ -56,7 +56,7 @@
 
 ### 方式 B：从源码运行
 
-需要 Python 3.11 及以上（开发与测试在 3.13 上完成）。
+需要 Python 3.11 及以上（已在 3.13 与 3.14 上验证）。
 
 ```bash
 git clone <本仓库地址> wav-analyzer
@@ -72,7 +72,7 @@ pip install -r requirements.txt
 python run_app.py            # 启动界面
 ```
 
-Windows 上也可以直接双击 `run_app.bat`（脚本会优先找 `py -3`，找不到就用 PATH 里的 `python`）。
+Windows 上也可以直接双击 `run_app.bat`（脚本会优先用项目内的 `.venv`，其次 `py -3`，最后才是 PATH 里的 `python`）。
 
 ---
 
