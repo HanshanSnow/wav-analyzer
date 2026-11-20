@@ -6,7 +6,7 @@
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey)
 ![python](https://img.shields.io/badge/python-3.11%2B-3776AB)
 ![license](https://img.shields.io/badge/license-MIT-green)
-![tests](https://img.shields.io/badge/tests-154%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-155%20passing-brightgreen)
 
 处理声学测量 WAV 数据的 Windows 桌面程序：读入录音，看波形、频谱与时频图，检测并修复瞬时冲击，拟合包络，算区间统计，导出定宽 TXT、统计 CSV、600 dpi 论文插图和独立 HTML 报告；上百个录音可以配成一条步骤脚本批量跑完。可选接一个大模型助手，用自然语言驱动上面这些工具，但所有改动仍需你确认。
 
@@ -192,7 +192,7 @@ L_SPL = L_dBFS + K
 ```bash
 pip install -r requirements.txt
 
-pytest -q                    # 全量 154 项
+pytest -q                    # 全量 155 项
 pytest tests/test_batch.py   # 只跑批量流水线
 ```
 
@@ -269,7 +269,7 @@ ai/                   AI 助手
   client.py             OpenAI 兼容接口客户端
   assistant.py          提示词与工具循环
   tools.py              白名单工具
-tests/                自动化测试（154 项）
+tests/                自动化测试（155 项）
 docs/                 使用手册（LaTeX 源 + PDF）与配图脚本
 demo/                 合成演示录音与截图；真实测量数据不进仓库
 ```

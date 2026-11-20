@@ -96,6 +96,31 @@ def test_timeout_message_reports_partial_progress():
     client.close()
 
 
+def test_stream_side_errors_are_surfaced():
+    """流里夹错误、或一个字都没吐，都要明确报错，不能让界面显示空白气泡。"""
+    def sse(text: str) -> bytes:
+        return text.encode("utf-8")
+
+    def client_for(body: bytes) -> OpenAICompatibleClient:
+        return OpenAICompatibleClient(
+            AISettings("https://example.test/v1", "test-model", "test-key"),
+            transport=httpx.MockTransport(
+                lambda request: httpx.Response(200, headers={"content-type": "text/event-stream"}, content=body)),
+        )
+
+    broken = client_for(sse('data: {"error":{"message":"context length exceeded"}}\n\n'))
+    with pytest.raises(RuntimeError) as info:
+        broken.chat([{"role": "user", "content": "hi"}])
+    assert "context length exceeded" in str(info.value)
+    broken.close()
+
+    empty = client_for(sse("data: [DONE]\n\n"))
+    with pytest.raises(ValueError) as info:
+        empty.chat([{"role": "user", "content": "hi"}])
+    assert "空内容" in str(info.value)
+    empty.close()
+
+
 def test_openai_compatible_tool_call_loop():
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)

@@ -6,7 +6,7 @@
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey)
 ![python](https://img.shields.io/badge/python-3.11%2B-3776AB)
 ![license](https://img.shields.io/badge/license-MIT-green)
-![tests](https://img.shields.io/badge/tests-154%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-155%20passing-brightgreen)
 
 A Windows desktop application for turning acoustic measurement recordings into numbers you can defend. Open a WAV, inspect the waveform, spectrum and spectrogram, strip out transient hits, fit an envelope, compute interval statistics, and export fixed-width TXT, CSV, 600 dpi figures or a standalone HTML report — or push hundreds of files through a reusable batch script. An optional LLM assistant can drive the same tools in natural language, and every change it proposes still needs your confirmation.
 
@@ -192,7 +192,7 @@ Profiles are named and stored, and the currently selected one applies to batch r
 ```bash
 pip install -r requirements.txt
 
-pytest -q                     # 154 tests
+pytest -q                     # 155 tests
 pytest tests/test_batch.py    # batch pipeline only
 ```
 
@@ -269,7 +269,7 @@ ai/                   AI assistant
   client.py             OpenAI-compatible client
   assistant.py          prompt and tool loop
   tools.py              whitelisted tools
-tests/                automated tests (154)
+tests/                automated tests (155)
 docs/                 manual (LaTeX source + PDF) and screenshot scripts
 demo/                 synthetic demo recording and screenshots; real measurement data is never committed
 ```

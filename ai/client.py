@@ -105,6 +105,9 @@ class OpenAICompatibleClient:
                 chunk = json.loads(data)
             except ValueError:
                 continue
+            if isinstance(chunk.get("error"), dict):
+                detail = chunk["error"].get("message") or json.dumps(chunk["error"], ensure_ascii=False)
+                raise RuntimeError(f"服务端在响应流里返回错误：{detail}")
             choices = chunk.get("choices") or []
             if not choices:
                 continue
@@ -148,7 +151,10 @@ class OpenAICompatibleClient:
                 kind = (response.headers.get("content-type") or "").lower()
                 if "event-stream" not in kind:
                     return self._message_from_payload(response.read())
-                return self._consume_stream(response.iter_lines(), progress)
+                message = self._consume_stream(response.iter_lines(), progress)
+                if not message.get("content") and not message.get("tool_calls"):
+                    raise ValueError("模型返回了空内容：可能被内容过滤，或该接口不支持流式返回。")
+                return message
         except ValueError:
             raise
         except Exception as exc:
