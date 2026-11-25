@@ -8,11 +8,10 @@ A Windows desktop tool for **acoustic measurement WAV data**. Version 2.0 turns 
 
 | File | Size | Notes |
 | --- | --- | --- |
-| `WAV_Analyzer_v2.0.0_win64_onedir.zip` | 136.0 MB | **Recommended.** Folder build — `WAV Analyzer\` with an `_internal\` directory. Startup never touches the temp directory and the first launch is faster |
-| `WAV_Analyzer_v2.0.0_win64.zip` | 124.9 MB | Single-file build — one `WAV Analyzer.exe` plus README, CHANGELOG, LICENSE and both manuals (English 66 pp. / Chinese 55 pp.). Handy to copy around, but it unpacks into the temp directory on first launch |
-| `WAV Analyzer.exe` | 120.1 MB | Single-file build on its own, if you already have the docs |
-| `WAV_Analyzer_Manual_EN_v2.0.0.pdf` | 2.4 MB | English manual, 66 pages |
-| `WAV_Analyzer_Manual_v2.0.0.pdf` | 3.3 MB | Chinese manual, 55 pages |
+| `WAV_Analyzer_v2.0.0_win64_onedir.zip` | 120.8 MB | **Recommended.** Folder build — `WAV Analyzer\` with an `_internal\` directory. Startup never touches the temp directory and the first launch is faster |
+| `WAV_Analyzer_v2.0.0_win64_onefile.zip` | 119.6 MB | Single-file build — one `WAV Analyzer.exe`. Handy to copy around, but it unpacks into the temp directory on first launch |
+| `WAV_Analyzer_Manual_EN_v2.0.0.pdf` | 2.4 MB | English manual |
+| `WAV_Analyzer_Manual_v2.0.0.pdf` | 3.3 MB | Chinese manual |
 
 Portable: unpack anywhere, double-click `WAV Analyzer.exe`. No Python, no installer, no admin rights. The first launch is slower because the single-file build unpacks itself.
 
@@ -58,11 +57,11 @@ Windows 10/11 x64、8 GB 以上内存；界面实时绘图，建议有正常图�
 ## Checksums (SHA-256)
 
 ```
-4d16f748be07d9d2a5518ecdde1ca7252ea30cef8fa1548c6df2f87dcb198aeb  WAV_Analyzer_v2.0.0_win64.zip
-3fd528c391b65775974e099d0b1e2d57bdb03086c796d3443c81f25c6985cb83  WAV_Analyzer_v2.0.0_win64_onedir.zip
-6f82e8f1450935600ce83f74141f622a983d332eacfcef92ac71c3bde391fbe2  WAV Analyzer.exe
-5407f0ac17941bfaf1f182093c86ea9db0e0348a1513d586a9b929a16f07644e  WAV_Analyzer_Manual_v2.0.0.pdf
+972d8fbb85939bd5f9f5d3ee72a3565dedcc7bad7a385fa3829362619b85cd05  WAV_Analyzer_v2.0.0_win64_onedir.zip
+ee330e1f6fc23abc71d59e217ba70f0daaa314041c1c44e7645c805b2ef8ea28  WAV_Analyzer_v2.0.0_win64_onefile.zip
+819b160663d63c5a742f7590220cf3c35b93541b793f764e31de61a0cee76dee  WAV_Analyzer.exe  (inside the onefile zip)
 d369f797381c2abb66303aedb26387c590ae0cbc3bceb359efd726cf87627ad7  WAV_Analyzer_Manual_EN_v2.0.0.pdf
+5407f0ac17941bfaf1f182093c86ea9db0e0348a1513d586a9b929a16f07644e  WAV_Analyzer_Manual_v2.0.0.pdf
 ```
 
 Verify with `certutil -hashfile "WAV Analyzer.exe" SHA256` (PowerShell / cmd).
