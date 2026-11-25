@@ -46,13 +46,23 @@ Download from [Releases](https://github.com/HanshanSnow/wav-analyzer/releases), 
 | Package | What is inside | When to use it |
 | --- | --- | --- |
 | `WAV_Analyzer_v2.0.0_win64_onedir.zip` | A `WAV Analyzer\` folder (exe + `_internal`) | **Recommended.** Startup never touches the temp directory, and the first launch is faster |
-| `WAV_Analyzer_v2.0.0_win64.zip` | A single `WAV Analyzer.exe` | For when you want to carry one file; the first launch unpacks into the temp directory |
+| `WAV_Analyzer_v2.0.0_win64_onefile.zip` | A single `WAV Analyzer.exe` | For when you want to carry one file; the first launch unpacks into the temp directory |
 
 1. Unpack into its own folder, e.g. `WAV Analyzer`; avoid `C:\Program Files`, which needs administrator rights.
 2. The single-file build is slower on first launch — it unpacks its bundled components into a temp directory. That is expected.
 3. The folder build never touches the temp directory, so it is more reliable on locked-down machines — but the `_internal` folder next to the exe must travel with it. Copying the exe alone will not run.
 
-> If Windows shows "Windows protected your PC", or "Open File - Security Warning: the publisher could not be verified", click **More info → Run anyway**, or **Run**. The binary is not code-signed; it is not malware. Scan it yourself if you like.
+> **Code signing.** Release binaries are published here on GitHub Releases. The project has
+> applied to the [SignPath Foundation](https://signpath.org/) free code-signing programme for
+> open-source projects; once a certificate is issued, Windows builds will be signed through
+> SignPath.io with a certificate from the SignPath Foundation, and this section will state that
+> the file you downloaded is signed. While a build is still unsigned, SmartScreen may warn:
+> click **More info → Run anyway**. Signing does not change the program's behaviour.
+>
+> **Privacy.** The program has no telemetry. Only the optional AI assistant contacts a server,
+> and only the endpoint you configure yourself; see [docs/PRIVACY.md](docs/PRIVACY.md).
+>
+> If Windows shows "Windows protected your PC", or "Open File - Security Warning: the publisher could not be verified", click **More info → Run anyway**, or **Run**. Scan the file yourself if you like.
 >
 > A freshly installed Windows 11 usually has **Smart App Control** switched on, which warns about *every* unsigned program. It is about the machine, not the version: 1.6.1 gets the same prompt on such a system and no prompt on a machine where Smart App Control is off.
 
