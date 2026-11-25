@@ -123,10 +123,14 @@ def fourier_analysis(
     transformed = np.fft.rfft(x * window_values, n=n_fft)
     frequencies = np.fft.rfftfreq(n_fft, d=1.0 / sample_rate)
     amplitude = np.abs(transformed) / coherent_gain
-    if len(amplitude) > 2:
-        amplitude[1:-1] *= 2.0
-        if n_fft % 2:
-            amplitude[-1] *= 2.0
+    # 单边谱倍增：偶数点没有「最后一个正频率 bin 需要倍增」的问题（末尾是 Nyquist），
+    # 奇数点则必须连最后一个 bin 一起倍增。用 n_fft 判断而不是 len(amplitude)：
+    # 3 点 FFT 的 len(amplitude)==2，但最后一个 bin 仍是正频率（BUG-019）。
+    if n_fft > 1:
+        if n_fft % 2 == 0:
+            amplitude[1:-1] *= 2.0
+        else:
+            amplitude[1:] *= 2.0
     phase = np.angle(transformed)
     search_start = 1
     if fundamental_frequency and fundamental_frequency > 0:
@@ -161,10 +165,15 @@ def stft_spectrogram(
     nperseg: int = 1024,
     noverlap: int | None = None,
     max_frames: int = MAX_SPECTROGRAM_FRAMES,
+    window: str = "hann",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     x = np.asarray(samples, dtype=np.float64).reshape(-1)
     if len(x) < 2:
         raise ValueError(tr("时频分析数据过短"))
+    try:
+        signal.get_window(window, 16, fftbins=True)
+    except Exception as exc:
+        raise ValueError(tf('不支持的窗函数：{window}', window=(window))) from exc
     nperseg = int(np.clip(nperseg, 16, len(x)))
     noverlap = nperseg // 2 if noverlap is None else int(np.clip(noverlap, 0, nperseg - 1))
     hop = max(1, nperseg - noverlap)
@@ -172,7 +181,7 @@ def stft_spectrogram(
 
     if expected_frames <= max_frames:
         frequencies, times, power = signal.spectrogram(
-            x - np.mean(x), fs=sample_rate, window="hann", nperseg=nperseg,
+            x - np.mean(x), fs=sample_rate, window=window, nperseg=nperseg,
             noverlap=noverlap, detrend=False, scaling="spectrum", mode="magnitude",
         )
         return times, frequencies, 20 * np.log10(np.maximum(power, 1e-15))
@@ -180,18 +189,20 @@ def stft_spectrogram(
     # 长音频保护：跳帧 STFT。保持原采样率与窗口长度（频率轴不变），
     # 只在整段信号上均匀取 max_frames 个时间点计算，避免生成上千万帧的矩阵。
     starts = np.linspace(0, len(x) - nperseg, int(max_frames)).astype(np.int64)
-    window = signal.get_window("hann", nperseg, fftbins=True)
-    coherent_gain = float(np.sum(window))
+    window_values = signal.get_window(window, nperseg, fftbins=True)
+    coherent_gain = float(np.sum(window_values))
     n_bins = nperseg // 2 + 1
     magnitude = np.empty((n_bins, len(starts)), dtype=np.float64)
     centered = x - np.mean(x)
     for column, start in enumerate(starts):
-        segment = centered[int(start):int(start) + nperseg] * window
+        segment = centered[int(start):int(start) + nperseg] * window_values
         spectrum = np.fft.rfft(segment)
+        # 与上面 SciPy 的 mode="magnitude" + scaling="spectrum" 保持同一口径：
+        # 该组合不做单边谱倍增（实测单位正弦峰值为 0.5），这里也不能再乘 2，
+        # 否则长音频（走跳帧分支）会比短音频整体高 6.02 dB（BUG-014）。
         amp = np.abs(spectrum) / coherent_gain
-        if n_bins > 2:
-            amp[1:-1] *= 2.0
         magnitude[:, column] = amp
     frequencies = np.fft.rfftfreq(nperseg, d=1.0 / sample_rate)
-    times = starts / sample_rate
+    # SciPy 的时间戳取窗口中心，跳帧分支必须一致，否则时间轴系统性提前半个窗（BUG-016）
+    times = (starts + nperseg / 2.0) / sample_rate
     return times, frequencies, 20 * np.log10(np.maximum(magnitude, 1e-15))

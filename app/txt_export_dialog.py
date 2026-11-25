@@ -44,8 +44,10 @@ class TxtExportDialog(QDialog):
         region: tuple[float, float] | None = None,
         available: dict[str, bool] | None = None,
         channel_index: int = 0,
+        peak_count: int = 8,
     ) -> None:
         super().__init__(parent)
+        self._peak_count = max(1, min(100, int(peak_count)))
         self.setWindowTitle(tr("导出分析 TXT"))
         self.setMinimumWidth(600)
         self._duration = max(0.0, float(duration))
@@ -57,7 +59,7 @@ class TxtExportDialog(QDialog):
         self._available = {key: True for key, _ in SECTION_ORDER}
         if available:
             self._available.update({k: bool(v) for k, v in available.items() if k in self._available})
-        stored = QSettings("PhysicsExperiment", "SoundWavAnalyzer")
+        stored = QSettings()
 
         hint = QLabel(
             tr("TXT 用定宽空格对齐、除末列外只含 ASCII，任何等宽字体下逐列对齐；"
@@ -257,6 +259,7 @@ class TxtExportDialog(QDialog):
             stat_scopes=scopes or ("full",),
             region=self._region,
             custom=custom,
+            peak_count=self._peak_count,
         )
 
     def sizeHint(self):  # noqa: D102 - 段落复选框两列排布，宽一点更整齐
@@ -282,7 +285,7 @@ class TxtExportDialog(QDialog):
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if answer != QMessageBox.Yes:
                 return
-        stored = QSettings("PhysicsExperiment", "SoundWavAnalyzer")
+        stored = QSettings()
         stored.setValue("txt/per_second", float(self.coord_value.value())
                         if self.coord_mode.currentData() == "per_second" else 1000.0)
         super().accept()

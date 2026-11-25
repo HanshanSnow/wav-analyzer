@@ -23,6 +23,7 @@ from typing import Any, Sequence
 import numpy as np
 
 from .display import min_max_downsample, thin_xy
+from .report_i18n import rt
 
 # 单条曲线的绘制点数上限。matplotlib 画百万点会明显变慢，
 # min/max 抽稀保留峰谷，视觉形态不受影响。
@@ -36,6 +37,10 @@ PAPER_DPI = 600
 # 制图字体规范：西文与数字用 Times New Roman，中文按字符级回退到宋体（SimSun）。
 _SERIF_FONTS = ["Times New Roman", "SimSun", "STIXGeneral", "DejaVu Serif"]
 _ENVELOPE_SMOOTH_MS = 5.0
+
+# 矢量格式按扩展名分派；位图仍是 PNG。
+VECTOR_SUFFIXES = (".pdf", ".svg")
+_FONT_KEYS = ("pdf.fonttype", "ps.fonttype", "svg.fonttype")
 
 # matplotlib 的 pyplot 状态是进程级的，多线程同时渲染会互相覆盖 rcParams。
 _RENDER_LOCK = threading.Lock()
@@ -58,6 +63,7 @@ class FigureOptions:
     spectrum_db: bool = True       # 频谱纵轴用 dBFS
     max_frequency: float = 0.0     # 0 表示画到奈奎斯特频率
     annotate_peaks: bool = True    # 标注主频/主要谱峰
+    peak_count: int = 8            # 频谱图上标注几个最强谱峰（1–100）
     mark_harmonics: bool = False   # 标出基频整数倍位置
     show_phase: bool = False       # 频谱图附带相位子图
     db_floor: float = -100.0       # 时频图动态范围下限（dBFS）
@@ -65,6 +71,7 @@ class FigureOptions:
     column: str = "single"         # single / double（仅 paper）
     legend_outside: bool = True    # 图例放坐标区外（仅 paper）
     smooth_envelope: bool = True   # 包络绘图做 5 ms 平滑（不影响算法与统计）
+    vector_text_as_path: bool = True  # PDF/SVG 里把文字转成路径（不依赖字体，代价是不可编辑）
 
     # ------------------------------------------------------------ 尺寸换算
     def is_paper(self) -> bool:
@@ -81,48 +88,40 @@ class FigureOptions:
         return max(320, int(self.width_px)) / dpi, max(240, int(self.height_px)) / dpi
 
 
-# matplotlib 必须在本模块导入时（主线程）完成首次导入：
-# 若第一次导入发生在 TaskWorker 线程里，Python 3.13 + PySide6 会在 shiboken 的
-# 特性探测阶段触发 access violation，现象是导出图片时整个进程闪退。
-try:  # pragma: no cover - 环境相关
-    import matplotlib as _mpl
-
-    _mpl.use("Agg")
-    from matplotlib import pyplot as _PLT
-except Exception:  # pragma: no cover - 缺 matplotlib 时应报错而不是崩
-    _PLT = None
+# matplotlib 不再在本模块导入时加载：它要 0.6–1.1 s，会把主窗口首帧拖后。
+# 首次导入**必须在 GUI 线程**完成（Python 3.13 + PySide6 在 shiboken 特性探测
+# 阶段会有 access violation 风险），由 run_app 在主窗口首帧之后调用
+# ensure_ready() 预热，导出入口也会在启动工作线程前再兜一次。
+_mpl = None
+_PLT = None
+_warmed = False
 
 
-def _load_pyplot():
-    if _PLT is None:
-        raise RuntimeError("未安装 matplotlib，无法导出图像")
+def _ensure_matplotlib():
+    """按需导入 matplotlib（Agg 后端）。可重复调用，只有第一次真的导入。"""
+    global _mpl, _PLT
+    if _PLT is not None:
+        return _PLT
+    import threading
+
+    if threading.current_thread() is not threading.main_thread():
+        # 兜底：首帧后的预热还没跑完，用户就点了导出。宁可给一句明确错误，
+        # 也不要在工作线程里首次导入 matplotlib（会 access violation）。
+        raise RuntimeError("图像导出后端尚未就绪，请稍候再试")
+    try:  # pragma: no cover - 环境相关
+        import matplotlib as mpl_module
+
+        mpl_module.use("Agg")
+        from matplotlib import pyplot as pyplot_module
+    except Exception as exc:  # pragma: no cover - 缺 matplotlib
+        raise RuntimeError("未安装 matplotlib，无法导出图像") from exc
+    _mpl = mpl_module
+    _PLT = pyplot_module
     return _PLT
 
 
-def _warm_up() -> None:
-    """在主线程把 matplotlib 的惰性路径全部走一遍。
-
-    mathtext 语法树、字体缓存、Agg 光栅化都是首次使用时才构建的。若第一次构建
-    发生在 TaskWorker 线程，PySide6 的导入钩子与 CPython 的惰性导入会撞在一起，
-    现象就是导出图片时进程直接闪退（access violation / Aborted）。
-    这里用一张 1×1 英寸的小图把这条路径提前跑完，代价约 0.15 s。
-    """
-    import io
-
-    if _PLT is None:  # pragma: no cover - 无 matplotlib
-        return
-    try:  # pragma: no cover - 环境相关
-        with _PLT.rc_context(_paper_rc()):
-            figure = _PLT.figure(figsize=(1.2, 1.0))
-            axis = figure.add_subplot(111)
-            axis.plot([0.0, 1.0], [0.0, 1.0])
-            axis.set_xlabel(r"$t$ / s")
-            axis.set_ylabel(r"$x$ / FS")
-            buffer = io.BytesIO()
-            figure.savefig(buffer, format="png", dpi=72)
-            _PLT.close(figure)
-    except Exception:  # pragma: no cover - 预热失败不应阻断导入
-        pass
+def _load_pyplot():
+    return _ensure_matplotlib()
 
 
 def _warm_up() -> None:
@@ -133,22 +132,31 @@ def _warm_up() -> None:
     现象就是导出图片时进程直接闪退（access violation / Aborted）。
     这里用一张 1×1 英寸的小图把这条路径提前跑完，代价约 0.15 s。
     """
+    global _warmed
+    if _warmed:
+        return
     import io
 
-    if _PLT is None:  # pragma: no cover - 无 matplotlib
-        return
+    plt = _ensure_matplotlib()
     try:  # pragma: no cover - 环境相关
-        with _PLT.rc_context(_paper_rc()):
-            figure = _PLT.figure(figsize=(1.2, 1.0))
+        with plt.rc_context(_paper_rc()):
+            figure = plt.figure(figsize=(1.2, 1.0))
             axis = figure.add_subplot(111)
             axis.plot([0.0, 1.0], [0.0, 1.0])
             axis.set_xlabel(r"$t$ / s")
             axis.set_ylabel(r"$x$ / FS")
             buffer = io.BytesIO()
             figure.savefig(buffer, format="png", dpi=72)
-            _PLT.close(figure)
+            plt.close(figure)
     except Exception:  # pragma: no cover - 预热失败不应阻断导入
         pass
+    _warmed = True
+
+
+def ensure_ready() -> None:
+    """把 matplotlib 的导入与预热做完。**必须在 GUI 线程调用**。"""
+    _ensure_matplotlib()
+    _warm_up()
 
 
 def _paper_rc() -> dict:
@@ -296,6 +304,29 @@ def _finish(plt, fig, axes: Sequence[Any], options: FigureOptions, style: dict, 
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     dpi = options.effective_dpi()
+    suffix = target.suffix.lower()
+    vector = suffix in VECTOR_SUFFIXES
+    if vector:
+        # 矢量输出按后缀由 matplotlib 选后端：PDF 用 TrueType 嵌入（42），
+        # SVG 默认把文字转成路径，任何机器打开都不丢字。这些是进程级 rcParams，
+        # 必须成对恢复，否则后续位图导出的字体设置会被带跑。
+        saved = {key: _PLT.rcParams.get(key) for key in _FONT_KEYS}
+        try:
+            _PLT.rcParams["pdf.fonttype"] = 42
+            _PLT.rcParams["ps.fonttype"] = 42
+            _PLT.rcParams["svg.fonttype"] = "path" if options.vector_text_as_path else "none"
+            fig.savefig(target, dpi=dpi, transparent=style["transparent"],
+                        format=suffix.lstrip("."))
+        finally:
+            for key, value in saved.items():
+                if value is not None:
+                    _PLT.rcParams[key] = value
+        size = fig.get_size_inches()
+        plt.close(fig)
+        # 矢量图没有像素尺寸，返回 None，避免被当成 PNG 尺寸写进状态栏。
+        return {"path": str(target), "width": None, "height": None,
+                "vector": True, "inches": (round(size[0], 3), round(size[1], 3))}
+
     fig.savefig(target, dpi=dpi, transparent=style["transparent"])
     size = fig.get_size_inches()
     width, height = int(round(size[0] * dpi)), int(round(size[1] * dpi))
@@ -367,8 +398,8 @@ def render_waveform_png(
         raise ValueError("采样点不足，无法导出波形图")
     options = options or FigureOptions()
     names = {
-        "current": "当前波形", "original": "原始波形", "preview": "去噪预览",
-        "envelope": "包络", "fit": "拟合曲线",
+        "current": rt("当前波形"), "original": rt("原始波形"), "preview": rt("去噪预览"),
+        "envelope": rt("包络"), "fit": rt("拟合曲线"),
     }
     if labels:
         names.update({k: v for k, v in labels.items() if v})
@@ -450,12 +481,12 @@ def render_waveform_png(
             if end > start:
                 for axis in axes:
                     axis.axvspan(start, end, color=colors["region"], alpha=0.08, zorder=1)
-                series.append("选区")
+                series.append(rt("选区"))
         if cursor is not None and np.isfinite(cursor):
             for axis in axes:
                 axis.axvline(float(cursor), color=colors["cursor"],
                              linewidth=0.8, linestyle=":", zorder=7)
-            series.append("游标")
+            series.append(rt("游标"))
 
         if sample_rate:
             top.set_xlim(0.0, (data.size - 1) / float(sample_rate))
@@ -510,7 +541,7 @@ def render_spectrum_png(
             phase_axis = None
         axis.plot(freqs, amps, color=colors["spectrum"], linewidth=0.6 if paper else 0.8)
         axis.set_ylabel(r"$L$ / dBFS" if use_db else r"$A$ / FS")
-        series = ["振幅谱"]
+        series = [rt("振幅谱")]
 
         marks = []
         if mark_harmonics and getattr(fourier, "fundamental_frequency", 0):
@@ -522,7 +553,7 @@ def render_spectrum_png(
             # 已经用 f0、2f0… 标过的谐波位置不再重复标频率，否则两套标注会压在一起。
             placed: list[float] = []
             harmonic_hz = [float(h["frequency_hz"]) for h in marks] if paper else []
-            for peak in fourier.peaks(count=8):
+            for peak in fourier.peaks(count=max(1, int(options.peak_count))):
                 at = float(peak["frequency_hz"])
                 if at > upper:
                     continue
@@ -549,7 +580,7 @@ def render_spectrum_png(
                         color=style["foreground"])
                 axis.axvline(at, color=colors["mark"], linewidth=0.5 if paper else 0.6,
                              alpha=0.45 if paper else 0.55)
-            series.append("谱峰标注")
+            series.append(rt("谱峰标注"))
 
         if marks:
             if paper and use_db:
@@ -575,7 +606,7 @@ def render_spectrum_png(
                     axis.axvline(base * order, color=colors["fit"], linewidth=0.6,
                                  linestyle="--", alpha=0.6)
                     order += 1
-            series.append("谐波标记")
+            series.append(rt("谐波标记"))
 
         axis.set_xlim(0.0, upper)
         if use_db:
@@ -593,7 +624,7 @@ def render_spectrum_png(
             phase_axis.set_yticks([-np.pi, -np.pi / 2, 0.0, np.pi / 2, np.pi])
             phase_axis.set_yticklabels(
                 [r"$-\pi$", r"$-\pi/2$", r"$0$", r"$\pi/2$", r"$\pi$"])
-            series.append("相位谱")
+            series.append(rt("相位谱"))
         else:
             axis.set_xlabel(r"$f$ / Hz")
         info = _finish(plt, fig, axes, options, style, Path(path))
@@ -655,7 +686,7 @@ def render_spectrogram_png(
         bar.ax.yaxis.label.set_color(style["foreground"])
         info = _finish(plt, fig, [axis], options, style, Path(path))
     info.update({
-        "kind": "spectrogram", "series": ["时频图"],
+        "kind": "spectrogram", "series": [rt("时频图")],
         "points": int(data.size), "total_samples": int(magnitude.size),
     })
     return info
@@ -668,5 +699,43 @@ KIND_LABELS = {
 }
 
 
-# 模块加载即预热：必须在主线程完成 matplotlib 的首次惰性构建。
-_warm_up()
+# 不再在模块加载时预热：由 run_app 在主窗口首帧之后调用 ensure_ready()，
+# 导出入口也会在启动工作线程前再兜一次（仍在 GUI 线程）。
+
+
+def render_comparison_png(
+    path: str | Path,
+    series: dict[str, list[tuple[int, float]]],
+    options: FigureOptions | None = None,
+    *,
+    metric: str = "",
+    x_label: str = "",
+    value_label: str = "",
+) -> dict:
+    """多文件对比：横轴文件序号，纵轴同一指标，每个分组一条折线。"""
+    options = options or FigureOptions()
+    if not series:
+        raise ValueError("没有可对比的数据")
+    paper = options.is_paper()
+    palette = (["#1a1a1a", "#c62828", "#1565c0", "#2e7d32", "#6a1b9a", "#ef6c00"]
+               if paper else
+               ["#1565c0", "#c62828", "#2e7d32", "#6a1b9a", "#ef6c00", "#00838f"])
+    plt = _load_pyplot()
+    rc, style = _style(options)
+    with _RENDER_LOCK, plt.rc_context(rc):
+        fig, axis = plt.subplots(figsize=options.figsize())
+        axes = [axis]
+        labels = list(series.keys())
+        for index, (group, points) in enumerate(series.items()):
+            if not points:
+                continue
+            axis.plot([point[0] for point in points], [point[1] for point in points],
+                      marker="o", markersize=3.4 if paper else 5.0,
+                      linewidth=1.0 if paper else 1.3,
+                      color=palette[index % len(palette)], label=group)
+        axis.set_xlabel(x_label or rt("文件序号"))
+        axis.set_ylabel(value_label or metric)
+        info = _finish(plt, fig, axes, options, style, Path(path))
+    info.update({"kind": "comparison", "series": labels,
+                 "points": sum(len(points) for points in series.values())})
+    return info

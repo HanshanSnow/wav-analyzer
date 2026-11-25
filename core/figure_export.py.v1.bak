@@ -1,0 +1,374 @@
+"""把分析结果渲染成可出版使用的 PNG。
+
+与界面共用同一份数据与同一套抽稀规则，但排版独立：MATLAB 风格的干净版式，
+明确的中文坐标轴与单位，尺寸/背景/是否画某条曲线都可以在导出对话框里选。
+所有函数只做纯计算与落盘，不触碰任何 Qt 对象，可直接在工作线程里跑。
+"""
+
+from __future__ import annotations
+
+import threading
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Sequence
+
+import numpy as np
+
+from .display import min_max_downsample, thin_xy
+
+# 单条曲线的绘制点数上限。matplotlib 画百万点会明显变慢，
+# min/max 抽稀保留峰谷，视觉形态不受影响。
+MAX_PLOT_POINTS = 200_000
+# 默认导出 DPI：1600×900 时对应 8×4.5 英寸，10pt 字号在报告里比例合适。
+DEFAULT_DPI = 200
+# 制图字体规范：西文与数字用 Times New Roman，中文按字符级回退到宋体（SimSun）；
+# 变量在 mathtext 里为斜体，单位走正体文本，因此标签写成 "幅值 $x$ / FS" 的形式。
+_SERIF_FONTS = ["Times New Roman", "SimSun", "STIXGeneral", "DejaVu Serif"]
+
+# matplotlib 的 pyplot 状态是进程级的，多线程同时渲染会互相覆盖 rcParams。
+_RENDER_LOCK = threading.Lock()
+
+
+@dataclass
+class FigureOptions:
+    """导出的通用排版选项。像素尺寸 = width_px × height_px。"""
+
+    width_px: int = 1600
+    height_px: int = 900
+    dpi: int = DEFAULT_DPI
+    background: str = "white"      # white / dark / transparent
+    grid: bool = True
+    legend: bool = True
+    title: str = ""
+    spectrum_db: bool = True       # 频谱纵轴用 dBFS
+    max_frequency: float = 0.0     # 0 表示画到奈奎斯特频率
+    annotate_peaks: bool = True    # 标注主频/主要谱峰
+    mark_harmonics: bool = False   # 标出基频整数倍位置
+    show_phase: bool = False       # 频谱图附带相位子图
+    db_floor: float = -100.0       # 时频图动态范围下限（dBFS）
+
+    def figsize(self) -> tuple[float, float]:
+        dpi = max(72, int(self.dpi))
+        width = max(320, int(self.width_px)) / dpi
+        height = max(240, int(self.height_px)) / dpi
+        return width, height
+
+
+def _load_pyplot():
+    import matplotlib
+    matplotlib.use("Agg")
+    from matplotlib import pyplot as plt
+    return plt
+
+
+def _style(options: FigureOptions):
+    dark = options.background == "dark"
+    transparent = options.background == "transparent"
+    scale = max(0.5, options.dpi / float(DEFAULT_DPI))
+    foreground = "#e8ecf2" if dark else "#1f2328"
+    grid_color = "#39424f" if dark else "#d8dde5"
+    background = "#12161c" if dark else "#ffffff"
+    if transparent:
+        background = "none"
+    rc = {
+        # 字体族按顺序逐字符回退：西文/数字命中 Times New Roman，中文落到宋体。
+        "font.family": _SERIF_FONTS,
+        "font.serif": _SERIF_FONTS,
+        "mathtext.fontset": "custom",
+        "mathtext.rm": "Times New Roman",
+        "mathtext.it": "Times New Roman:italic",
+        "mathtext.bf": "Times New Roman:bold",
+        "mathtext.default": "it",
+        "axes.unicode_minus": False,
+        "font.size": 11.0 * scale,
+        "axes.titlesize": 12.0 * scale,
+        "axes.labelsize": 11.5 * scale,
+        "legend.fontsize": 9.5 * scale,
+        "xtick.labelsize": 9.5 * scale,
+        "ytick.labelsize": 9.5 * scale,
+        "text.color": foreground,
+        "axes.labelcolor": foreground,
+        "axes.edgecolor": foreground,
+        "xtick.color": foreground,
+        "ytick.color": foreground,
+        "axes.facecolor": background,
+        "figure.facecolor": background,
+        "grid.color": grid_color,
+        "legend.framealpha": 0.9,
+    }
+    return rc, {"foreground": foreground, "background": background, "transparent": transparent}
+
+
+def _finish(plt, fig, axes: Sequence[Any], options: FigureOptions, style: dict, path: Path) -> dict:
+    for axis in axes:
+        if options.grid:
+            axis.grid(True, alpha=0.35, linewidth=0.6)
+    if options.title.strip():
+        fig.suptitle(options.title.strip(), fontsize=13.0 * max(0.5, options.dpi / float(DEFAULT_DPI)))
+    fig.tight_layout()
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    dpi = max(72, int(options.dpi))
+    fig.savefig(target, dpi=dpi, transparent=style["transparent"])
+    size = fig.get_size_inches()
+    width, height = int(round(size[0] * dpi)), int(round(size[1] * dpi))
+    plt.close(fig)
+    return {"path": str(target), "width": width, "height": height}
+
+
+def _thin(values, sample_rate: int, max_points: int = MAX_PLOT_POINTS, start_time: float = 0.0):
+    columns = max(2, int(max_points) // 2)
+    return min_max_downsample(values, sample_rate, columns, start_time=start_time)
+
+
+def _thin_with_times(values, times, max_points: int = MAX_PLOT_POINTS):
+    return thin_xy(values, times, max_points)
+
+
+def render_waveform_png(
+    path: str | Path,
+    *,
+    samples: np.ndarray,
+    sample_rate: int,
+    options: FigureOptions | None = None,
+    original: np.ndarray | None = None,
+    preview: np.ndarray | None = None,
+    envelope: np.ndarray | None = None,
+    envelope_times: np.ndarray | None = None,
+    fit_times: np.ndarray | None = None,
+    fit_values: np.ndarray | None = None,
+    region: tuple[float, float] | None = None,
+    cursor: float | None = None,
+    labels: dict[str, str] | None = None,
+) -> dict:
+    """导出波形图；五种曲线各自可选，选区与游标可选。"""
+    data = np.asarray(samples, dtype=np.float64).reshape(-1)
+    if data.size < 2:
+        raise ValueError("采样点不足，无法导出波形图")
+    options = options or FigureOptions()
+    names = {
+        "current": "当前波形", "original": "原始波形", "preview": "去噪预览",
+        "envelope": "包络", "fit": "拟合曲线",
+    }
+    if labels:
+        names.update({k: v for k, v in labels.items() if v})
+
+    plt = _load_pyplot()
+    rc, style = _style(options)
+    series: list[str] = []
+    points = 0
+    with _RENDER_LOCK, plt.rc_context(rc):
+        fig, axis = plt.subplots(figsize=options.figsize())
+        drawn = 0
+        if original is not None:
+            src = np.asarray(original, dtype=np.float64).reshape(-1)
+            if src.size >= 2:
+                times, values = _thin(src, sample_rate)
+                axis.plot(times, values, color="#9aa4b2", linewidth=0.7, label=names["original"], zorder=2)
+                series.append(names["original"])
+                drawn = max(drawn, len(src))
+        if preview is not None:
+            src = np.asarray(preview, dtype=np.float64).reshape(-1)
+            if src.size >= 2:
+                times, values = _thin(src, sample_rate)
+                axis.plot(times, values, color="#ef6c00", linewidth=0.8, label=names["preview"], zorder=3)
+                series.append(names["preview"])
+                drawn = max(drawn, len(src))
+        times, values = _thin(data, sample_rate)
+        axis.plot(times, values, color="#1565c0", linewidth=0.8, label=names["current"], zorder=4)
+        series.append(names["current"])
+        drawn = max(drawn, data.size)
+        points += min(data.size, MAX_PLOT_POINTS)
+
+        if envelope is not None and len(np.asarray(envelope).reshape(-1)) >= 2:
+            env = np.asarray(envelope, dtype=np.float64).reshape(-1)
+            if envelope_times is not None and len(envelope_times) == len(env):
+                times_env, values_env = _thin_with_times(env, np.asarray(envelope_times, dtype=np.float64))
+            else:
+                times_env, values_env = _thin(env, sample_rate)
+            axis.plot(times_env, values_env, color="#2e7d32", linewidth=1.3, alpha=0.9,
+                          label=names["envelope"], zorder=5)
+            series.append(names["envelope"])
+        if fit_values is not None and fit_times is not None:
+            fitted = np.asarray(fit_values, dtype=np.float64).reshape(-1)
+            fit_at = np.asarray(fit_times, dtype=np.float64).reshape(-1)
+            if fitted.size >= 2 and fitted.size == fit_at.size:
+                axis.plot(
+                    fit_at, fitted, color="#c2185b", linewidth=1.6, linestyle="--",
+                    label=names["fit"], zorder=6,
+                )
+                series.append(names["fit"])
+
+        if region is not None:
+            start, end = float(region[0]), float(region[1])
+            if end > start:
+                axis.axvspan(start, end, color="#1565c0", alpha=0.10, zorder=1)
+                series.append("选区")
+        if cursor is not None and np.isfinite(cursor):
+            axis.axvline(float(cursor), color="#6a1b9a", linewidth=1.0, linestyle=":", zorder=7)
+            series.append("游标")
+
+        axis.set_xlabel(r"$t$ / s")
+        axis.set_ylabel(r"$x$ / FS")
+        if sample_rate:
+            axis.set_xlim(0.0, (data.size - 1) / float(sample_rate))
+        if options.legend and len(series) >= 2:
+            axis.legend(loc="upper right", ncols=2)
+        info = _finish(plt, fig, [axis], options, style, Path(path))
+    info.update({"kind": "wave", "series": series, "points": points, "total_samples": int(drawn)})
+    return info
+
+
+def render_spectrum_png(
+    path: str | Path,
+    fourier,
+    options: FigureOptions | None = None,
+    *,
+    show_phase: bool | None = None,
+    mark_harmonics: bool | None = None,
+    annotate_peaks: bool | None = None,
+) -> dict:
+    """导出振幅谱（可选叠加相位子图、谱峰标注、谐波标记）。"""
+    options = options or FigureOptions()
+    frequencies = np.asarray(fourier.frequencies, dtype=np.float64).reshape(-1)
+    if frequencies.size < 2:
+        raise ValueError("频谱数据不足，无法导出")
+    use_db = options.spectrum_db
+    amplitude = fourier.amplitude_dbfs if use_db else np.asarray(fourier.amplitude, dtype=np.float64)
+    show_phase = options.show_phase if show_phase is None else show_phase
+    mark_harmonics = options.mark_harmonics if mark_harmonics is None else mark_harmonics
+    annotate_peaks = options.annotate_peaks if annotate_peaks is None else annotate_peaks
+
+    nyquist = float(fourier.sample_rate) / 2.0 if getattr(fourier, "sample_rate", 0) else float(frequencies[-1])
+    upper = float(options.max_frequency) if options.max_frequency and options.max_frequency > 0 else nyquist
+    upper = min(upper, float(frequencies[-1]))
+    keep = frequencies <= upper
+    freqs = frequencies[keep]
+    amps = np.asarray(amplitude, dtype=np.float64)[keep]
+    if freqs.size < 2:
+        raise ValueError("截取的频率范围过窄")
+
+    plt = _load_pyplot()
+    rc, style = _style(options)
+    with _RENDER_LOCK, plt.rc_context(rc):
+        if show_phase:
+            fig, axes = plt.subplots(2, 1, figsize=options.figsize(), sharex=True,
+                                     gridspec_kw={"height_ratios": [2.1, 1.0]})
+            axis, phase_axis = axes
+        else:
+            fig, axis = plt.subplots(figsize=options.figsize())
+            axes = [axis]
+            phase_axis = None
+        axis.plot(freqs, amps, color="#00838f", linewidth=0.8)
+        axis.set_ylabel(r"$L$ / dBFS" if use_db else r"$A$ / FS")
+        series = ["振幅谱"]
+
+        if annotate_peaks and freqs.size:
+            # 相邻峰靠得太近时标注文字会叠在一起，按频率间隔做一次去重。
+            placed: list[float] = []
+            for peak in fourier.peaks(count=8):
+                at = float(peak["frequency_hz"])
+                if at > upper:
+                    continue
+                if any(abs(at - other) < upper * 0.06 for other in placed):
+                    continue
+                placed.append(at)
+                level = float(peak["amplitude_dbfs"]) if use_db else float(peak["amplitude"])
+                axis.annotate(
+                    f"{at:.1f} Hz", xy=(at, level),
+                    xytext=(4, 7 if len(placed) % 2 else -15), textcoords="offset points",
+                    fontsize=8.5 * max(0.5, options.dpi / float(DEFAULT_DPI)),
+                    color=style["foreground"],
+                )
+                axis.axvline(at, color="#ef6c00", linewidth=0.6, alpha=0.55)
+            series.append("谱峰标注")
+        if mark_harmonics and getattr(fourier, "fundamental_frequency", 0):
+            base = float(fourier.fundamental_frequency)
+            order = 1
+            while base * order <= upper and order <= 12:
+                axis.axvline(base * order, color="#c2185b", linewidth=0.6, linestyle="--", alpha=0.6)
+                order += 1
+            series.append("谐波标记")
+        axis.set_xlim(0.0, upper)
+        if use_db:
+            axis.set_ylim(max(float(np.min(amps)) - 6.0, -200.0), 6.0)
+        else:
+            axis.set_ylim(0.0, float(np.max(amps)) * 1.12 + 1e-12)
+
+        if phase_axis is not None:
+            phase = np.asarray(fourier.phase, dtype=np.float64)[keep]
+            phase_axis.plot(freqs, phase, color="#8e24aa", linewidth=0.7, alpha=0.85)
+            phase_axis.set_xlabel(r"$f$ / Hz")
+            phase_axis.set_ylabel(r"$\varphi$ / rad")
+            phase_axis.set_ylim(-np.pi, np.pi)
+            phase_axis.set_yticks([-np.pi, -np.pi / 2, 0.0, np.pi / 2, np.pi])
+            phase_axis.set_yticklabels(
+                [r"$-\pi$", r"$-\pi/2$", r"$0$", r"$\pi/2$", r"$\pi$"])
+            series.append("相位谱")
+        else:
+            axis.set_xlabel(r"$f$ / Hz")
+        info = _finish(plt, fig, axes, options, style, Path(path))
+    info.update({
+        "kind": "spectrum", "series": series,
+        "points": int(freqs.size), "total_samples": int(frequencies.size),
+    })
+    return info
+
+
+def render_spectrogram_png(
+    path: str | Path,
+    spectrogram: tuple[np.ndarray, np.ndarray, np.ndarray],
+    options: FigureOptions | None = None,
+    *,
+    db_floor: float | None = None,
+) -> dict:
+    """导出时频图（对数幅度，viridis 色标）。"""
+    options = options or FigureOptions()
+    times, frequencies, magnitude = spectrogram
+    times = np.asarray(times, dtype=np.float64).reshape(-1)
+    frequencies = np.asarray(frequencies, dtype=np.float64).reshape(-1)
+    magnitude = np.asarray(magnitude, dtype=np.float64)
+    if magnitude.size == 0 or times.size < 2 or frequencies.size < 2:
+        raise ValueError("时频数据不足，无法导出")
+
+    nyquist = float(frequencies[-1])
+    upper = float(options.max_frequency) if options.max_frequency and options.max_frequency > 0 else nyquist
+    upper = min(upper, nyquist)
+    rows = frequencies <= upper
+    data = magnitude[rows, :]
+    freq_axis = frequencies[rows]
+    if data.shape[0] < 2:
+        raise ValueError("截取的频率范围过窄")
+
+    floor = float(options.db_floor if db_floor is None else db_floor)
+    top = float(np.percentile(data, 99.5))
+    if not np.isfinite(floor) or floor >= top:
+        floor = top - 60.0
+
+    plt = _load_pyplot()
+    rc, style = _style(options)
+    with _RENDER_LOCK, plt.rc_context(rc):
+        fig, axis = plt.subplots(figsize=options.figsize())
+        image = axis.imshow(
+            data, origin="lower", aspect="auto", cmap="viridis",
+            extent=[float(times[0]), float(times[-1]), float(freq_axis[0]), float(freq_axis[-1])],
+            vmin=floor, vmax=top, interpolation="nearest",
+        )
+        axis.set_xlabel(r"$t$ / s")
+        axis.set_ylabel(r"$f$ / Hz")
+        bar = fig.colorbar(image, ax=axis, pad=0.015)
+        bar.set_label(r"$L$ / dBFS")
+        bar.ax.yaxis.label.set_color(style["foreground"])
+        info = _finish(plt, fig, [axis], options, style, Path(path))
+    info.update({
+        "kind": "spectrogram", "series": ["时频图"],
+        "points": int(data.size), "total_samples": int(magnitude.size),
+    })
+    return info
+
+
+KIND_LABELS = {
+    "wave": "波形图",
+    "spectrum": "频谱图（傅立叶）",
+    "spectrogram": "时频图",
+}

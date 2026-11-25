@@ -42,6 +42,14 @@ BACKGROUNDS = ((tr("白色（论文/报告）"), "white"), (tr("深色（投影/
 # 每类图的扩展名与默认文件名后缀。
 KIND_SUFFIX = {KIND_WAVE: tr("波形"), KIND_SPECTRUM: tr("频谱"), KIND_SPECTROGRAM: tr("时频图")}
 
+# 导出格式：值是与 matplotlib 后端一致的扩展名。PNG 位图，PDF/SVG 矢量。
+IMAGE_FORMATS = (
+    ("png", tr("PNG 位图 (*.png)")),
+    ("pdf", tr("PDF 矢量 (*.pdf)")),
+    ("svg", tr("SVG 矢量 (*.svg)")),
+)
+VECTOR_FORMATS = ("pdf", "svg")
+
 
 class ImageExportDialog(QDialog):
     """让用户选择导出哪类图、包含哪些曲线，以及尺寸与背景。"""
@@ -53,9 +61,11 @@ class ImageExportDialog(QDialog):
         default_kind: str = KIND_WAVE,
         default_path: str = "",
         available: dict[str, bool] | None = None,
+        peak_count: int = 8,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle(tr("导出图像 PNG"))
+        self._peak_count = max(1, min(100, int(peak_count)))
+        self.setWindowTitle(tr("导出图像（PNG / PDF / SVG）"))
         self.setMinimumWidth(560)
         self._available = {
             "original": True, "preview": False, "envelope": False, "fit": False,
@@ -63,11 +73,12 @@ class ImageExportDialog(QDialog):
         }
         if available:
             self._available.update({k: bool(v) for k, v in available.items() if k in self._available})
-        stored = QSettings("PhysicsExperiment", "SoundWavAnalyzer")
+        stored = QSettings()
 
         hint = QLabel(
-            tr("导出的 PNG 按下方尺寸与背景重新渲染，不是界面截图："
-            "长音频会按 min/max 抽稀到 ≤20 万点绘制，峰谷形态与读数不受影响。")
+            tr("导出图按下方尺寸与背景重新渲染，不是界面截图："
+            "长音频会按 min/max 抽稀到 ≤20 万点绘制，峰谷形态与读数不受影响。"
+            "PDF / SVG 是矢量图，缩放不失真，适合直接放进论文。")
         )
         hint.setWordWrap(True)
         hint.setStyleSheet("color:#455a64;")
@@ -106,6 +117,17 @@ class ImageExportDialog(QDialog):
         background_index = self.background.findData(saved_background)
         self.background.setCurrentIndex(max(0, background_index))
         self.grid_check = QCheckBox(tr("显示网格"))
+        self.format_combo = QComboBox()
+        for suffix, label in IMAGE_FORMATS:
+            self.format_combo.addItem(label, suffix)
+        saved_format = str(stored.value("export/format", "png"))
+        format_index = self.format_combo.findData(saved_format)
+        self.format_combo.setCurrentIndex(max(0, format_index))
+        self.format_combo.currentIndexChanged.connect(self._format_changed)
+        self.vector_path_check = QCheckBox(tr("矢量图文字转为路径（不依赖本机字体）"))
+        self.vector_path_check.setChecked(bool(stored.value("export/vector_text_path", True)))
+        self.vector_path_check.setToolTip(
+            tr("勾选后 PDF/SVG 里的文字会转成曲线，任何机器打开都不丢字，但不能再编辑文字。"))
         self.legend_place = QComboBox()
         for label, value in LEGEND_PLACES:
             self.legend_place.addItem(label, value)
@@ -123,6 +145,7 @@ class ImageExportDialog(QDialog):
         size_row.addWidget(self.height_spin)
 
         image_form = QFormLayout()
+        image_form.addRow(tr("格式"), self.format_combo)
         image_form.addRow(tr("尺寸 / 版式"), size_row)
         image_form.addRow("", self.size_note)
         image_form.addRow(tr("背景"), self.background)
@@ -132,6 +155,7 @@ class ImageExportDialog(QDialog):
         image_form.addRow(tr("图层"), flags)
         image_form.addRow(tr("图例"), self.legend_place)
         image_form.addRow(tr("标题"), self.title_edit)
+        image_form.addRow("", self.vector_path_check)
 
         # ------------------------------------------------------------ 输出文件
         self.path_edit = QLineEdit(default_path)
@@ -168,6 +192,7 @@ class ImageExportDialog(QDialog):
         if 0 <= saved_preset < self.size_preset.count():
             self.size_preset.setCurrentIndex(saved_preset)
         self._apply_size_preset()
+        self._format_changed()
 
     # ---------------------------------------------------------------- 各类型页
     def _build_wave_page(self) -> QWidget:
@@ -306,9 +331,14 @@ class ImageExportDialog(QDialog):
             pixels = PAPER_SIZES.get(column, PAPER_SIZES["single"])
             # 用 :g 而不是 :.1f——2.45 会被舍成 2.5，和 1470 px 对不上，看着像写错了。
             text = (tf('物理尺寸 {_v0:g} × {_v1:g} in，{PAPER_DPI} dpi → {_v3} × {_v4} px；刻度朝内、四边齐全、白底', _v0=(pixels[0]), _v1=(pixels[1]), PAPER_DPI=(PAPER_DPI), _v3=(int(round(pixels[0] * PAPER_DPI))), _v4=(int(round(pixels[1] * PAPER_DPI)))))
+            if self.current_format() in VECTOR_FORMATS:
+                text += tr("；矢量格式按物理尺寸输出，没有像素尺寸")
             self.size_note.setText(text)
         else:
-            self.size_note.setText(tr("屏幕版式：按像素出图，可选深色或透明背景"))
+            text = tr("屏幕版式：按像素出图，可选深色或透明背景")
+            if self.current_format() in VECTOR_FORMATS:
+                text += tr("；矢量格式的物理尺寸 = 像素 ÷ dpi")
+            self.size_note.setText(text)
             if width and height:
                 for spin, value in ((self.width_spin, width), (self.height_spin, height)):
                     spin.blockSignals(True)
@@ -334,25 +364,43 @@ class ImageExportDialog(QDialog):
         data = self.size_preset.currentData()
         return isinstance(data, tuple) and len(data) == 4 and data[0] == "paper"
 
-    def _layout_and_column(self) -> tuple[str, str]:
-        data = self.size_preset.currentData()
-        if isinstance(data, tuple) and len(data) == 4:
-            return str(data[0]), str(data[1])
-        return "paper", "single"
+    # ---------------------------------------------------------------- 格式
+    def current_format(self) -> str:
+        return str(self.format_combo.currentData() or "png")
+
+    def _format_changed(self) -> None:
+        """切格式：矢量时关掉「转路径」之外的像素概念，并把保存路径的后缀换过来。"""
+        suffix = self.current_format()
+        vector = suffix in VECTOR_FORMATS
+        self.vector_path_check.setEnabled(vector)
+        text = self.path_edit.text().strip()
+        if text:
+            current = Path(text)
+            if current.suffix.lower() in (".png", ".pdf", ".svg"):
+                self.path_edit.setText(str(current.with_suffix(f".{suffix}")))
+        self._apply_size_preset()
 
     def _browse(self) -> None:
         current = self.path_edit.text().strip()
+        suffix = self.current_format()
         directory = str(Path(current).parent) if current else ""
+        label = dict(IMAGE_FORMATS)[suffix]
         path, _ = QFileDialog.getSaveFileName(
-            self, tr("保存 PNG"), current or "waveform.png", tr("PNG 图像 (*.png)"))
+            self, tr("保存图像"), current or f"waveform.{suffix}", label)
         if path:
-            if not path.lower().endswith(".png"):
-                path += ".png"
+            if Path(path).suffix.lower() not in (".png", ".pdf", ".svg"):
+                path += f".{suffix}"
             self.path_edit.setText(path)
 
     # ---------------------------------------------------------------- 结果
     def selected_kind(self) -> str:
         return str(self.kind.currentData())
+
+    def _layout_and_column(self) -> tuple[str, str]:
+        data = self.size_preset.currentData()
+        if isinstance(data, tuple) and len(data) == 4:
+            return str(data[0]), str(data[1])
+        return "paper", "single"
 
     def wave_selection(self) -> dict[str, bool]:
         return {
@@ -381,15 +429,23 @@ class ImageExportDialog(QDialog):
             max_frequency=float(self.spectrum_limit.value()) if self.selected_kind() == KIND_SPECTRUM
             else float(self.spectro_limit.value()),
             annotate_peaks=self.spectrum_peaks.isChecked(),
+            peak_count=self._peak_count,
             mark_harmonics=self.spectrum_harmonics.isChecked(),
             show_phase=self.spectrum_phase.isChecked(),
             db_floor=float(self.spectro_floor.value()),
+            vector_text_as_path=self.vector_path_check.isChecked(),
         )
 
     def output_path(self) -> str:
         text = self.path_edit.text().strip()
-        if text and not text.lower().endswith(".png"):
-            text += ".png"
+        suffix = self.current_format()
+        if not text:
+            return ""
+        target = Path(text)
+        # 只有完全没写扩展名时才补；写了别的后缀就交给 accept() 去拒绝，
+        # 免得 "wave.txt" 被静悄悄改成 "wave.txt.png"。
+        if not target.suffix:
+            text += f".{suffix}"
         return text
 
     def sizeHint(self):  # noqa: D102 - 让对话框默认宽一点，两列复选框不挤
@@ -401,25 +457,27 @@ class ImageExportDialog(QDialog):
     def accept(self) -> None:
         path = self.output_path()
         if not path:
-            QMessageBox.warning(self, tr("缺少保存路径"), tr("请先选择 PNG 文件保存位置。"))
+            QMessageBox.warning(self, tr("缺少保存路径"), tr("请先选择图像保存位置。"))
             self._browse()
             return
         target = Path(path)
-        if target.suffix.lower() != ".png":
-            QMessageBox.warning(self, tr("格式不支持"), tr("本功能只导出 PNG（.png）。"))
+        if target.suffix.lower() not in (".png", ".pdf", ".svg"):
+            QMessageBox.warning(self, tr("格式不支持"), tr("只支持 PNG（.png）、PDF（.pdf）、SVG（.svg）。"))
             return
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
         except Exception as exc:
             QMessageBox.warning(self, tr("目录不可用"), tf('无法创建目录：{exc}', exc=(exc)))
             return
-        stored = QSettings("PhysicsExperiment", "SoundWavAnalyzer")
+        stored = QSettings()
         stored.setValue("export/width", self.width_spin.value())
         stored.setValue("export/height", self.height_spin.value())
         stored.setValue("export/background", self.background.currentData())
         stored.setValue("export/grid", "true" if self.grid_check.isChecked() else "false")
         stored.setValue("export/legend_place", self.legend_place.currentData())
         stored.setValue("export/preset", self.size_preset.currentIndex())
+        stored.setValue("export/format", self.current_format())
+        stored.setValue("export/vector_text_path", "true" if self.vector_path_check.isChecked() else "false")
         super().accept()
 
 

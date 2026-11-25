@@ -63,7 +63,7 @@ class AudioData:
 def read_wav(path: str | Path) -> AudioData:
     source = Path(path)
     if not source.is_file():
-        raise FileNotFoundError(tf('WAV 文件不存在：{source}', source=(source)))
+        raise FileNotFoundError(tf('音频文件不存在：{source}', source=(source)))
     samples, sample_rate = sf.read(str(source), dtype="float64", always_2d=True)
     info = sf.info(str(source))
     return AudioData(samples, int(sample_rate), source, info.subtype or "")

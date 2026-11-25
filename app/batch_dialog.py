@@ -30,7 +30,7 @@ class BatchDialog(QDialog):
     """返回 (steps, files, output_dir)；由主窗口负责执行。"""
 
     def __init__(self, parent: QWidget | None = None, default_dir: str = "",
-                 settings: QSettings | None = None):
+                 settings: QSettings | None = None, selection=None):
         super().__init__(parent)
         self.setWindowTitle(tr("批量处理 — 脚本编辑"))
         self.resize(1010, 730)
@@ -38,8 +38,13 @@ class BatchDialog(QDialog):
         self.files: list[str] = []
         self._index = -1
         self._widgets: dict[str, object] = {}
+        self._reference_path: str = ""
+        self._reference_channel: int = 0
+        # 回填裁切时刻用：调用方给一个返回 (start_s, end_s, duration_s) 的函数，
+        # 没有打开文件或没有选区时返回 None。对话框自己不去摸主窗口。
+        self._selection = selection
         # 允许注入独立配置对象，测试里用临时 INI 文件，不污染真实偏好。
-        self._settings = settings or QSettings("WAVAnalyzer", "WAVAnalyzer")
+        self._settings = settings or QSettings()
         self._build_ui()
         self._restore(default_dir)
 
@@ -165,6 +170,28 @@ class BatchDialog(QDialog):
         row2.addWidget(browse)
         layout.addLayout(row2)
 
+        row3 = QHBoxLayout()
+        row3.addWidget(QLabel(tr("外部参考")))
+        self.reference_label = QLabel(tr("不使用（用各文件的第 2 声道）"))
+        self.reference_label.setWordWrap(True)
+        self.reference_label.setStyleSheet("color: #546e7a;")
+        ref_pick = QPushButton(tr("选择参考 WAV…"))
+        ref_pick.clicked.connect(self._pick_reference)
+        ref_clear = QPushButton(tr("清除"))
+        ref_clear.clicked.connect(self._clear_reference)
+        row3.addWidget(self.reference_label, 1)
+        row3.addWidget(QLabel(tr("声道")))
+        self.reference_channel = QSpinBox()
+        self.reference_channel.setRange(1, 16)
+        self.reference_channel.setValue(self._reference_channel + 1)
+        self.reference_channel.setToolTip(
+            tr("多声道参考文件里用哪一路；声道号会随脚本一起保存"))
+        self.reference_channel.valueChanged.connect(self._on_reference_channel)
+        row3.addWidget(self.reference_channel)
+        row3.addWidget(ref_pick)
+        row3.addWidget(ref_clear)
+        layout.addLayout(row3)
+
         self.summary_label = QLabel("")
         self.summary_label.setStyleSheet("color: #607d8b;")
         self.summary_label.setWordWrap(True)
@@ -261,6 +288,15 @@ class BatchDialog(QDialog):
                 self.form.addRow(param.label, widget)
             if param.tooltip:
                 widget.setToolTip(param.tooltip)
+        if step["kind"] == "trim":
+            self.fill_button = QPushButton(tr("取当前选区"))
+            self.fill_button.setToolTip(tr("把主窗口波形上框选的起止时刻填进上面两个框"))
+            self.fill_button.clicked.connect(self._fill_trim_from_selection)
+            usable = self._selection is not None and self._selection() is not None
+            self.fill_button.setEnabled(usable)
+            if not usable:
+                self.fill_button.setToolTip(tr("先打开音频并在波形上框选一段，再回填"))
+            self.form.addRow("", self.fill_button)
         self._sync_enabled()
 
     def _make_widget(self, param, value) -> QWidget:
@@ -357,6 +393,31 @@ class BatchDialog(QDialog):
             item.setText(f"{self._index + 1}. {describe_step(self.steps[self._index])}")
         self._refresh_hint()
 
+    def _fill_trim_from_selection(self) -> None:
+        values = self._selection() if self._selection else None
+        if not values:
+            return
+        start_seconds, end_seconds, duration = values
+        start = max(0.0, min(float(start_seconds), float(duration)))
+        end = max(start, min(float(end_seconds), float(duration)))
+        self._widgets["start"].setValue(start)      # type: ignore[union-attr]
+        self._widgets["end"].setValue(end)          # type: ignore[union-attr]
+        self._widgets["start"].setFocus()           # type: ignore[union-attr]
+
+    def _trim_problem(self) -> str | None:
+        """执行前检查裁切参数；返回 None 表示可以跑。"""
+        for order, step in enumerate(self.steps, 1):
+            if step["kind"] != "trim":
+                continue
+            params = step["params"]
+            start = float(params.get("start", 0.0) or 0.0)
+            end = float(params.get("end", 0.0) or 0.0)
+            if start < 0.0:
+                return tf('第 {_v0} 步“裁剪到区间”的起点不能为负', _v0=(order))
+            if end != 0.0 and end <= start:
+                return tf('第 {_v0} 步“裁剪到区间”的起点必须小于终点（终点留 0 表示到文件末尾）', _v0=(order))
+        return None
+
     def _sync_enabled(self) -> None:
         """把当前组合下无意义的参数置灰，避免“填了却不生效”。"""
         if self._index < 0:
@@ -369,7 +430,8 @@ class BatchDialog(QDialog):
     # ------------------------------------------------------------ 文件与输出
     def _pick_files(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
-            self, tr("选择待处理的 WAV（可多选）"), "", tr("WAV 音频 (*.wav)"))
+            self, tr("选择待处理的音频（可多选）"), "",
+            tr("音频文件 (*.wav *.flac *.aiff *.aif)"))
         if paths:
             self.files = list(dict.fromkeys(paths))     # 去重且保序
             self._refresh_hint()
@@ -384,6 +446,55 @@ class BatchDialog(QDialog):
         folder = QFileDialog.getExistingDirectory(self, tr("选择输出目录"), start)
         if folder:
             self.output_dir.setText(folder)
+
+    def _pick_reference(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, tr("选择参考 WAV"), "", tr("WAV 音频 (*.wav)"))
+        if not path:
+            return
+        self._reference_path = path
+        self._refresh_reference_label()
+
+    def _clear_reference(self) -> None:
+        self._reference_path = ""
+        self._refresh_reference_label()
+
+    def _on_reference_channel(self, value: int) -> None:
+        self._reference_channel = max(0, int(value) - 1)
+
+    def _refresh_reference_label(self) -> None:
+        if self._reference_path:
+            self.reference_label.setText(
+                tf('{_v0}（第 {_v1} 声道）',
+                   _v0=(Path(self._reference_path).name),
+                   _v1=(self._reference_channel + 1)))
+        else:
+            self.reference_label.setText(tr("不使用（用各文件的第 2 声道）"))
+
+    def reference(self) -> dict | None:
+        """批量级外部参考；None 表示沿用各文件的内置声道。"""
+        if not self._reference_path:
+            return None
+        return {"path": self._reference_path, "channel": self._reference_channel}
+
+    def _reference_for_script(self) -> dict | None:
+        """写脚本时带上 SHA 与身份：重放才能发现"参考已被换掉"。"""
+        block = self.reference()
+        if not block:
+            return None
+        from core.reference import REFERENCE_CACHE, file_identity, file_sha256
+
+        size, mtime_ns = file_identity(block["path"])
+        cached = REFERENCE_CACHE.get(block["path"], channel=block["channel"],
+                                     sample_rate=0)
+        digest = cached.sha256 if cached is not None else ""
+        if not digest:
+            try:
+                digest = file_sha256(block["path"])
+            except OSError:
+                digest = ""
+        block.update({"sha256": digest, "size": size, "mtime_ns": mtime_ns})
+        return block
 
     def _refresh_hint(self) -> None:
         if not self.files:
@@ -413,7 +524,8 @@ class BatchDialog(QDialog):
             self, tr("保存脚本"), "batch_script.json", "JSON (*.json)")
         if not path:
             return
-        payload = {"version": 1, "steps": self.steps}
+        payload = {"version": 1, "steps": self.steps,
+                   "reference": self._reference_for_script()}
         try:
             Path(path).write_text(
                 json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -435,10 +547,49 @@ class BatchDialog(QDialog):
             QMessageBox.warning(self, tr("载入失败"), tr("文件里没有可识别的任务步骤。"))
             return
         self.steps = steps
+        reference = payload.get("reference")
+        if isinstance(reference, dict) and reference.get("path"):
+            self._restore_script_reference(reference)
         self._index = -1
         self._refresh_list()
         self.step_list.setCurrentRow(0)
         self.summary_label.setText(tf('已载入 {_v0} 个步骤', _v0=(len(steps))))
+
+    def _restore_script_reference(self, reference: dict) -> None:
+        """恢复脚本里的参考：缺文件或内容变了要明确报错，不能静默换数据。
+
+        旧脚本只有 path/channel（没有身份字段）：先按原样恢复，校验留给运行时。
+        """
+        from core.reference import file_identity
+
+        path = str(reference.get("path") or "")
+        channel = int(reference.get("channel") or 0)
+        if not Path(path).is_file():
+            QMessageBox.warning(
+                self, tr("参考文件找不到"),
+                tf('脚本里记录的参考文件不在了：{_v0}\n已清除该参考，步骤仍会载入。',
+                   _v0=(path)))
+            self._reference_path = ""
+            self._refresh_reference_label()
+            return
+
+        saved_size = reference.get("size")
+        saved_mtime = reference.get("mtime_ns")
+        if saved_size is not None and saved_mtime is not None:
+            if file_identity(path) != (int(saved_size), int(saved_mtime)):
+                QMessageBox.warning(
+                    self, tr("参考文件已改变"),
+                    tf('参考文件与保存脚本时不一致：{_v0}\n已清除该参考，步骤仍会载入。',
+                       _v0=(path)))
+                self._reference_path = ""
+                self._refresh_reference_label()
+                return
+        self._reference_path = path
+        self._reference_channel = channel
+        self.reference_channel.blockSignals(True)
+        self.reference_channel.setValue(channel + 1)
+        self.reference_channel.blockSignals(False)
+        self._refresh_reference_label()
 
     # ------------------------------------------------------------ 校验与返回
     def _on_start(self) -> None:
@@ -447,6 +598,10 @@ class BatchDialog(QDialog):
             return
         if not self.files:
             QMessageBox.information(self, tr("还没有文件"), tr("请先点“选择待处理的文件”。"))
+            return
+        problem = self._trim_problem()
+        if problem:
+            QMessageBox.warning(self, tr("裁切参数不对"), problem)
             return
         for step in self.steps:
             if step["kind"] == "export_txt":
@@ -478,11 +633,23 @@ class BatchDialog(QDialog):
         self._persist()
         self.accept()
 
+    def done(self, result: int) -> None:  # noqa: N802 - Qt 的命名约定
+        """关窗口就记住这次的脚本，不要求用户真的把批跑一遍。
+
+        users 反馈：「排了半天步骤，关掉就没了」。原来只有点「开始」才落盘，
+        取消/直接关闭全丢。这里统一在关闭时落一次。
+        """
+        self._persist()
+        super().done(result)
+
     def _persist(self) -> None:
         """记住上次的脚本与输出目录，实验往往要重复跑同一套流程。"""
         try:
             self._settings.setValue("batch/script", json.dumps(self.steps, ensure_ascii=False))
             self._settings.setValue("batch/output_dir", self.output_dir.text().strip())
+            self._settings.setValue("batch/reference", json.dumps(
+                self.reference(), ensure_ascii=False) if self.reference() else "")
+            self._settings.sync()
         except Exception:
             pass
 
@@ -506,13 +673,28 @@ class BatchDialog(QDialog):
             self.step_list.setCurrentRow(0)
         saved_dir = self._settings.value("batch/output_dir", "")
         self.output_dir.setText(str(saved_dir or default_dir or ""))
-        if restored:
-            self.summary_label.setText(tf('已恢复上次的 {_v0} 个步骤', _v0=(len(self.steps))))
+        raw_ref = self._settings.value("batch/reference", "")
+        if isinstance(raw_ref, str) and raw_ref.strip():
+            try:
+                saved_ref = json.loads(raw_ref)
+            except ValueError:
+                saved_ref = None
+            if isinstance(saved_ref, dict) and saved_ref.get("path"):
+                self._reference_path = str(saved_ref["path"])
+                self._reference_channel = int(saved_ref.get("channel") or 0)
+                self.reference_channel.blockSignals(True)
+                self.reference_channel.setValue(self._reference_channel + 1)
+                self.reference_channel.blockSignals(False)
+                self._refresh_reference_label()
         self._refresh_hint()
+        if restored:
+            # 放在 _refresh_hint 之后：否则刚写的「已恢复」会被摘要覆盖掉
+            self.summary_label.setText(tf('已恢复上次的 {_v0} 个步骤', _v0=(len(self.steps))))
 
     # ------------------------------------------------------------ 对外
-    def job(self) -> tuple[list[dict], list[str], str]:
-        return self.steps, self.files, self.output_dir.text().strip()
+    def job(self) -> tuple[list[dict], list[str], str, dict | None]:
+        return (self.steps, self.files, self.output_dir.text().strip(),
+                self.reference())
 
     def script_steps(self) -> list[dict]:
         return self.steps

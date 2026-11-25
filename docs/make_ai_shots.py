@@ -20,10 +20,10 @@ sys.path.insert(0, str(ROOT))
 
 from PySide6.QtWidgets import QApplication, QFrame  # noqa: E402
 
-from docs.make_batch_shots import OUT, light_palette, shoot  # noqa: E402
+from docs.make_batch_shots import OUT, light_palette, msg, shoot  # noqa: E402
 
 # 手册配图里不能出现真 Key，也不能出现本机路径
-ANSWER = """## 结论
+ANSWER_ZH = """## 结论
 
 `demo_impulse.wav` 采样率 48000 Hz，时长 2.00 s，峰值 0.82 FS。
 在 0.512 s 处有单点冲击，幅度约为局部 RMS 的 12 倍。
@@ -40,6 +40,26 @@ ANSWER = """## 结论
 | RMS | -10.9 | dBFS |
 | 冲击 | 1 | 段 |
 """
+
+ANSWER_EN = """## Conclusion
+
+`demo_impulse.wav` is 48000 Hz, 2.00 s long, peak 0.82 FS.
+There is a single transient at 0.512 s, roughly 12x the local RMS.
+
+### Suggested order
+
+1. Repair the transient first: `request_denoise(threshold=8.0, max_repair_ms=3.0)`
+2. Then take statistics over 0.2-1.8 s, avoiding the attack and the tail
+3. Record main frequency and RMS, subtract the reference file to get dL
+
+| Quantity | Value | Unit |
+|---|---|---|
+| Main frequency | 1000.2 | Hz |
+| RMS | -10.9 | dBFS |
+| Transients | 1 | segment |
+"""
+
+ANSWER = msg(ANSWER_ZH, ANSWER_EN)
 
 
 def trim_bottom(pixmap, margin: int = 8):
@@ -59,6 +79,11 @@ def main() -> None:
     app = QApplication.instance() or QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setPalette(light_palette())
+
+    from core.i18n import set_language
+
+    # 必须在 import app.* 之前：界面文案常量在 import 时求值
+    set_language((os.environ.get("SHOT_LANG") or "zh").strip().lower())
 
     from app.main_window import MainWindow
     from app.settings_dialog import AISettingsDialog
@@ -84,7 +109,8 @@ def main() -> None:
 
     view = ChatView()
     view.setFixedSize(432, 470)  # 先给一个高度，让文档按 432 宽排版
-    view.add_user("分析当前录音，检测冲击并给出处理建议")
+    view.add_user(msg("分析当前录音，检测冲击并给出处理建议",
+                      "Analyse the current recording: detect transients and suggest a repair"))
     view.add_ai(ANSWER)
     # 再按实际内容高度收紧：图里不留大片白边，插进手册才不会显小
     QApplication.processEvents()

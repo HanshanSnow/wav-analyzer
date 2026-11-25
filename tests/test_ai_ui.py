@@ -91,13 +91,18 @@ def test_settings_dialog_has_no_key_checkbox_and_declares_storage():
     dialog.deleteLater()
 
 
-def test_timeout_default_is_120s_and_ignores_old_key():
-    stored = QSettings("PhysicsExperimentTest", "WavAnalyzerTimeoutTest")
+def test_timeout_default_is_120s_and_ignores_old_key(tmp_path):
+    # 用独立 INI 而不是注册表：注册表在某些机器上写入会静默失败，
+    # 让这条纯逻辑测试变成环境检查（审查 P1）。
+    path = tmp_path / "timeout.ini"
+    stored = QSettings(str(path), QSettings.IniFormat)
     stored.clear()
     assert DEFAULT_TIMEOUT_S == 120.0
     assert _load_timeout(stored) == 120.0, "没有存储值时用 120 s"
     stored.setValue(TIMEOUT_SETTINGS_KEY, 300)
-    assert _load_timeout(stored) == 300.0
+    stored.sync()
+    # 重新打开一次，确认真的落到磁盘而不只是内存缓存
+    assert _load_timeout(QSettings(str(path), QSettings.IniFormat)) == 300.0
     stored.setValue(TIMEOUT_SETTINGS_KEY, "坏值")
     assert _load_timeout(stored) == 120.0
     stored.clear()

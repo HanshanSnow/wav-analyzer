@@ -35,6 +35,25 @@ def _settings(tmp_path) -> QSettings:
     return store
 
 
+@pytest.fixture(autouse=True)
+def _close_batch_dialogs():
+    """收掉测试里创建的 BatchDialog。
+
+    不关闭时，pytest 打印完 "N passed" 进程仍会以 0xC0000409 退出（BUG-022）：
+    摘要说成功、进程却失败，这种假绿灯会掩盖真实回归。
+    只处理 BatchDialog，不去动其它窗口——全局清理会误伤后面还要用的对象。
+    """
+    yield
+    app = QApplication.instance()
+    if app is None:
+        return
+    for widget in app.topLevelWidgets():
+        if isinstance(widget, BatchDialog):
+            widget.close()
+            widget.deleteLater()
+    app.processEvents()
+
+
 def _tone(path, f0, amp=0.3, seconds=2.0, fs=FS, noise=1e-4):
     t = np.arange(int(fs * seconds)) / fs
     rng = np.random.default_rng(0)
@@ -60,7 +79,7 @@ def _wait_worker(window: MainWindow, timeout_ms: int = 90000) -> None:
 def test_step_specs_cover_all_single_file_functions():
     kinds = {spec.kind for spec in STEP_SPECS}
     assert kinds == {
-        "denoise", "trim", "envelope", "stats", "dual",
+        "denoise", "denoise_tools", "trim", "envelope", "stats", "dual",
         "export_wav", "export_txt", "export_png", "export_csv", "export_html",
     }, "单文件能做的处理与导出都应在批量步骤里可选"
 
@@ -296,6 +315,29 @@ def test_dialog_default_script(tmp_path):
     assert dialog.step_list.item(0).text().startswith("1. ")
 
 
+def test_fourier_cache_follows_effective_fundamental(tmp_path):
+    """P0 回归：dual(自动估峰) 之后 stats 指定固定基频，导出必须重算频谱。
+
+    只缓存一个 FourierResult 的话，导出会沿用自动估峰那份 200 Hz 的结果，
+    而用户明确指定的 100 Hz 只体现在统计表里。
+    """
+    stereo = tmp_path / "stereo.wav"
+    t = np.arange(int(2.0 * FS)) / FS
+    channel = np.sin(2 * np.pi * 200.0 * t) + 0.2 * np.sin(2 * np.pi * 100.0 * t)
+    write_wav(str(stereo), np.stack([channel, channel], axis=1).astype(np.float32),
+              FS, subtype="PCM_24")
+
+    from core.batch import _State, _ensure_fourier
+
+    state = _State(stereo, read_wav(str(stereo)))
+    auto = _ensure_fourier(state, None)
+    assert abs(auto.main_frequency - 200.0) < 5.0, "自动估峰应落在 200 Hz"
+    fixed = _ensure_fourier(state, 100.0)
+    assert abs(fixed.main_frequency - 100.0) < 5.0, "指定 100 Hz 必须重算"
+    assert _ensure_fourier(state, 100.0) is fixed, "同一基频应复用缓存"
+    assert _ensure_fourier(state, None) is not fixed, "换基频必须重算"
+
+
 def test_dialog_param_edit_syncs_list_and_enables_related_fields(tmp_path):
     _app()
     dialog = BatchDialog(None, settings=_settings(tmp_path))
@@ -433,3 +475,96 @@ def test_main_window_rejects_second_batch(tmp_path):
     window = MainWindow()
     assert window.start_batch([], ["x.wav"], "") is False
     assert window.start_batch([new_step("export_csv")], [], "") is False
+
+
+# ---------------------------------------------------------------- 裁切到区间
+
+
+def _trim(start: float, end: float) -> dict:
+    step = new_step("trim")
+    step["params"].update({"start": start, "end": end})
+    return step
+
+
+def test_batch_trim_clamps_beyond_file_length(tmp_path):
+    """批量里文件长短不一：超出部分钳制并在备注里留痕，不整批失败。"""
+    folder = tmp_path / "in"
+    folder.mkdir()
+    path = _tone(folder / "a_500Hz.wav", 500, seconds=2.0)
+    out = tmp_path / "out"
+
+    result = run_batch([path], [_trim(0.5, 99.0), new_step("export_wav")], output_dir=out)
+    assert result.ok_count == 1, result.summary()
+    notes = result.files[0].notes
+    assert any("钳制" in note for note in notes), notes
+
+    exported = next(out.glob("*_处理后.wav"))
+    audio = read_wav(exported)
+    assert audio.duration == pytest.approx(1.5, abs=1e-3)
+
+
+def test_batch_trim_too_short_is_skipped_with_note(tmp_path):
+    folder = tmp_path / "in"
+    folder.mkdir()
+    path = _tone(folder / "a_500Hz.wav", 500, seconds=2.0)
+    out = tmp_path / "out"
+
+    result = run_batch([path], [_trim(1.9999, 0.0), new_step("export_wav")], output_dir=out)
+    assert result.ok_count == 1, result.summary()
+    assert any("太短" in note for note in result.files[0].notes)
+    audio = read_wav(next(out.glob("*_处理后.wav")))
+    assert audio.duration == pytest.approx(2.0, abs=1e-3), "跳过裁切，保留整个文件"
+
+
+def test_batch_dialog_fills_trim_from_selection(tmp_path):
+    _app()
+    dialog = BatchDialog(selection=lambda: (0.25, 0.75, 2.0), settings=_settings(tmp_path))
+    dialog.steps = [new_step("trim")]
+    dialog._refresh_list()
+    dialog.step_list.setCurrentRow(0)
+
+    assert dialog.fill_button.isEnabled() is True
+    dialog.fill_button.click()
+    assert dialog._widgets["start"].value() == pytest.approx(0.25)
+    assert dialog._widgets["end"].value() == pytest.approx(0.75)
+    dialog.close()
+
+
+def test_batch_dialog_fill_button_disabled_without_selection(tmp_path):
+    _app()
+    dialog = BatchDialog(selection=lambda: None, settings=_settings(tmp_path))
+    dialog.steps = [new_step("trim")]
+    dialog._refresh_list()
+    dialog.step_list.setCurrentRow(0)
+    assert dialog.fill_button.isEnabled() is False
+    dialog.close()
+
+
+def test_batch_dialog_rejects_start_not_before_end(tmp_path):
+    _app()
+    dialog = BatchDialog(selection=lambda: (0.1, 0.2, 2.0), settings=_settings(tmp_path))
+    dialog.steps = [_trim(0.5, 0.1)]
+    assert dialog._trim_problem() is not None
+    assert "起点必须小于终点" in dialog._trim_problem()
+
+    dialog.steps = [_trim(0.5, 0.0)]      # 0 表示到文件末尾，合法
+    assert dialog._trim_problem() is None
+
+    dialog.steps = [_trim(-0.1, 0.5)]
+    assert "不能为负" in dialog._trim_problem()
+    dialog.close()
+
+
+def test_main_window_selection_seconds(tmp_path):
+    _app()
+    window = MainWindow()
+    assert window.selection_seconds() is None, "没打开音频时不给选区"
+    window.load_audio(_tone(tmp_path / "a_500Hz.wav", 500, seconds=2.0))
+    start, end, duration = window.selection_seconds()
+    assert (start, end) == pytest.approx((0.0, 2.0)), "载入后选区默认覆盖整个文件"
+    window.region.setRegion((0.25, 0.75))
+    start, end, duration = window.selection_seconds()
+    assert (start, end) == pytest.approx((0.25, 0.75))
+    assert duration == pytest.approx(2.0, abs=1e-3)
+    window.close()
+

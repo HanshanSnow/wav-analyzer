@@ -87,21 +87,32 @@ class Calibration:
 
     # ------------------------------------------------------------ 计算
     def offset_db(self) -> float | None:
-        """K：dBFS → dB SPL 的加性偏移。参数不全时返回 None。"""
+        """K：dBFS → dB SPL 的加性偏移。参数不全或非有限值时返回 None。"""
         if self._offset is not None:
             return self._offset
         if self.mode == MODE_REFERENCE:
             if self.ref_spl_db is None or self.ref_dbfs is None:
                 return None
+            if not (math.isfinite(float(self.ref_spl_db)) and math.isfinite(float(self.ref_dbfs))):
+                return None
             return float(self.ref_spl_db) - float(self.ref_dbfs)
-        if self.sensitivity_mv_pa is None or self.sensitivity_mv_pa <= 0:
+        # 手工编辑或损坏的配置文件可能塞进 1e400（解析成 inf）或 nan：
+        # 这类值一旦进入 log10 就抛 math domain error，必须先挡掉（BUG-018）。
+        if self.sensitivity_mv_pa is None:
+            return None
+        if not math.isfinite(float(self.sensitivity_mv_pa)) or float(self.sensitivity_mv_pa) <= 0:
+            return None
+        if not math.isfinite(float(self.preamp_gain_db)):
+            return None
+        if not math.isfinite(float(self.adc_full_scale_vrms)):
             return None
         gain_linear = 10.0 ** (float(self.preamp_gain_db) / 20.0)
         full_scale = float(self.adc_full_scale_vrms)
-        if gain_linear <= 0 or full_scale <= 0:
+        if not math.isfinite(gain_linear) or gain_linear <= 0 or full_scale <= 0:
             return None
         # S 以 mV/Pa 给出，乘 1000 换成 V/Pa 的倒数关系
-        return 20.0 * math.log10(full_scale * 1000.0 / (gain_linear * self.sensitivity_mv_pa * P_REF_PA))
+        offset = 20.0 * math.log10(full_scale * 1000.0 / (gain_linear * self.sensitivity_mv_pa * P_REF_PA))
+        return offset if math.isfinite(offset) else None
 
     @property
     def ready(self) -> bool:

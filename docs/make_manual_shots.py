@@ -23,7 +23,15 @@ from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtGui import QColor, QPalette  # noqa: E402
 from PySide6.QtWidgets import QApplication, QDockWidget, QSplitter  # noqa: E402
 
-OUT = ROOT / "docs" / "figures"
+SHOT_LANG = (os.environ.get("SHOT_LANG") or "zh").strip().lower()
+_IS_EN = SHOT_LANG == "en"
+# 英文手册用 figures_en/，中文手册用 figures/，两边文件名保持一致
+OUT = ROOT / "docs" / ("figures_en" if _IS_EN else "figures")
+
+
+def msg(zh: str, en: str) -> str:
+    """配图里的示例文字（状态栏、档名、示例数值）跟界面语言走。"""
+    return en if _IS_EN else zh
 DEMO = ROOT / "demo" / "demo_impulse.wav"
 DECAY = ROOT / "demo" / "demo_decay.wav"
 
@@ -74,6 +82,11 @@ def main() -> None:
     app.setStyle("Fusion")
     app.setPalette(light_palette())
 
+    from core.i18n import set_language
+
+    # 必须在 import app.* 之前：界面文案常量在 import 时求值
+    set_language(SHOT_LANG)
+
     from app.main_window import MainWindow
 
     window = MainWindow()
@@ -94,7 +107,8 @@ def main() -> None:
         central.setSizes([470, 1370])
         QApplication.processEvents()
 
-    status = "已载入 demo_impulse.wav｜0.2 s / 44100 Hz"
+    status = msg("已载入 demo_impulse.wav｜0.2 s / 44100 Hz",
+                 "Loaded demo_impulse.wav | 0.2 s / 44100 Hz")
     window.statusBar().showMessage(status)
 
     # 01：波形与去噪预览。选区取末段 180–190 ms，蓝色区与橙色预览都能看清
@@ -103,7 +117,9 @@ def main() -> None:
     QApplication.processEvents()
     window.preview_denoise()
     QApplication.processEvents()
-    window.statusBar().showMessage(status + "｜预览完成：2 段冲击（橙色曲线为预览，未写入数据）")
+    window.statusBar().showMessage(msg(
+        status + "｜预览完成：2 段冲击（橙色曲线为预览，未写入数据）",
+        status + " | Preview ready: 2 transients (orange curve is a preview, not written)"))
     shoot(window, OUT / "01_waveform_denoise.png")
 
     # 02：傅立叶分析
@@ -135,7 +151,9 @@ def main() -> None:
     QApplication.processEvents()
     window.fit_current_envelope()
     QApplication.processEvents()
-    window.statusBar().showMessage("已载入 demo_decay.wav｜0.6 s / 48000 Hz｜指数包络拟合")
+    window.statusBar().showMessage(msg(
+        "已载入 demo_decay.wav｜0.6 s / 48000 Hz｜指数包络拟合",
+        "Loaded demo_decay.wav | 0.6 s / 48000 Hz | exponential envelope fit"))
     shoot(window, OUT / "05_envelope.png")
 
     window.hide()

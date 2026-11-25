@@ -18,6 +18,8 @@ lupdate/lrelease 两套工具链，对本项目是净负担；三是查不到的
 
 from __future__ import annotations
 
+import os
+
 LANG_ZH = "zh"
 LANG_EN = "en"
 
@@ -25,6 +27,15 @@ DEFAULT_LANGUAGE = LANG_ZH
 
 # QSettings 里的键名。改默认语言不必换键，但换键会让老用户的语言选择回到默认。
 LANGUAGE_SETTINGS_KEY = "ui/language"
+
+# 环境变量：截图脚本、冒烟测试用它强制界面语言，不必改动用户已保存的选择。
+ENV_LANGUAGE_KEY = "WAV_ANALYZER_UI_LANG"
+
+
+def language_from_environment() -> str | None:
+    """读环境变量里指定的语言；没设、或设成未知值时返回 None（交回默认逻辑）。"""
+    value = os.environ.get(ENV_LANGUAGE_KEY, "").strip().lower()
+    return value if value in (LANG_ZH, LANG_EN) else None
 
 _OPTIONS: tuple[tuple[str, str], ...] = (
     (LANG_ZH, "中文"),

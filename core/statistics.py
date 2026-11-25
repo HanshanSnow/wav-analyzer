@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from core.i18n import tf, tr
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 import numpy as np
 
@@ -51,75 +51,95 @@ def _all_finite(x: np.ndarray) -> bool:
     return True
 
 
-# ---------------------------------------------------------------- 统计量释义
-# 键名与 interval_statistics 的返回值一一对应。界面、报告与手册共用这一份释义，
+# 「计算口径」这段是拼出来的：界面用 tr/tf 渲染，报告要用 rt/rtf 重新渲染。
+# 因此同时保留中文原文（模板 + 参数），不把已渲染的字符串当成唯一来源。
+_SCOPE_ENERGY = "RMS/峰值/标准差基于选区全部有效采样点"
+_SCOPE_WINDOW = "主频/THD 基于居中窗口 {_v0:,}/{_v1:,} 点（{_v2:.3f}–{_v3:.3f} s）"
+_SCOPE_ALL = "主频/THD 基于选区全部有效采样点"
+
+# ---------------------------------------------------------------- 统计量释义# 键名与 interval_statistics 的返回值一一对应。界面、报告与手册共用这一份释义，
 # 避免只有英文变量名时产生歧义（例如 peak_amplitude 与 peak_to_peak、rms 与 rms_dbfs）。
+# 这里存**中文原文**，翻译在使用处做：界面用 `tr()`，报告用 `rt()`。
+# 若在定义时就把 tr() 结果写死，报告语言与界面语言就绑在一起了。
 STATISTIC_FIELDS: tuple[tuple[str, str, str], ...] = (
-    ("start_s", tr("有效起点 (s)"),
-     tr("参与统计的第一个采样点时间；若起点被排除段覆盖，会自动向右收缩")),
-    ("end_s", tr("有效终点 (s)"),
-     tr("参与统计的最后一个采样点时间（右端按开区间理解）")),
-    ("requested_start_s", tr("请求起点 (s)"),
-     tr("蓝框选区原始起点，用于核对掩码把边界修正了多少")),
-    ("requested_end_s", tr("请求终点 (s)"),
-     tr("蓝框选区原始终点")),
-    ("samples", tr("有效采样点数"),
-     tr("真正参与计算的采样点数（已扣除被排除的长冲击段）")),
-    ("excluded_samples", tr("排除点数"),
-     tr("被判为长冲击、未做插值修复的点数；这些点不计入任何幅值/能量统计")),
-    ("duration_s", tr("有效时长 (s)"),
-     tr("有效采样点数 ÷ 采样率，通常略小于蓝框宽度")),
-    ("mean", tr("均值 / 直流分量 (FS)"),
-     tr("整段有效数据的算术平均；明显不为 0 说明存在直流偏置，报告需注明")),
-    ("std", tr("标准差 (FS)"),
-     tr("去均值后的起伏幅度，只反映交流成分，与直流偏置无关")),
-    ("min", tr("最小瞬时值 (FS)"),
-     tr("单个采样点的最小值（有符号，负半周最深处）")),
-    ("max", tr("最大瞬时值 (FS)"),
-     tr("单个采样点的最大值（有符号，正半周最高处）")),
-    ("peak_amplitude", tr("峰值振幅 max|x| (FS)"),
-     tr("正负两侧绝对值的较大者，恒为正值；不是峰峰值")),
-    ("peak_to_peak", tr("峰峰值 max−min (FS)"),
-     tr("max 减 min，等于波形总摆幅，约为峰值振幅的 2 倍（对称波形）")),
-    ("rms", tr("有效值 RMS (FS)"),
-     tr("√(mean(x²))，包含直流分量；整周期正弦时 RMS = 峰值 ÷ √2 ≈ 0.707×峰值")),
-    ("rms_dbfs", tr("RMS 电平 (dBFS)"),
-     tr("20·lg(RMS/FS)，满幅正弦约 −3.01 dBFS；dBFS 是数字满幅相对值，不等于 dB SPL")),
-    ("rms_spl", tr("等效声压级 (dB SPL)"),
-     tr("RMS 电平 + 校准偏移 K；等效于该区间的能量平均声压级，仅在配置声学校准后出现")),
-    ("peak_spl", tr("峰值声压级 (dB SPL)"),
-     tr("20·lg(峰值振幅) + K，未计频率计权，仅在配置声学校准后出现")),
-    ("calibration_offset_db", tr("校准偏移 K (dB)"),
-     tr("dB SPL = dBFS + K；由灵敏度、前置增益与满幅电压推算，或由已知声压级标定得到")),
-    ("calibration_name", tr("校准配置"),
-     tr("本次换算使用的校准名称；空表示未校准，此时不输出任何 dB SPL")),
-    ("crest_factor", tr("波峰因数 (峰值/RMS)"),
-     tr("峰值振幅 ÷ RMS；正弦约 1.414，脉冲/冲击性越强该值越大")),
-    ("main_frequency_hz", tr("主频 (Hz)"),
-     tr("幅值最大谱峰对应的频率；长文件按居中窗口估计，实际窗口见“计算口径”")),
-    ("main_amplitude", tr("主频振幅 (FS)"),
-     tr("单边幅值谱在主频处的幅值；整周期正弦时约等于峰值振幅")),
-    ("main_amplitude_dbfs", tr("主频电平 (dBFS)"),
-     tr("20·lg(主频振幅)，用于和本底噪声比较，不是声压级")),
-    ("thd", tr("总谐波失真 THD"),
-     tr("2～10 次谐波（到奈奎斯特频率为止）幅值的均方根 ÷ 基波幅值；纯正弦接近 0")),
-    ("analysis_scope", tr("计算口径说明"),
-     tr("声明哪些量基于选区全部采样点、哪些量基于受限 FFT 窗口")),
+    ("start_s", "有效起点 (s)",
+     "参与统计的第一个采样点时间；若起点被排除段覆盖，会自动向右收缩"),
+    ("end_s", "有效终点 (s)",
+     "参与统计的最后一个采样点时间（右端按开区间理解）"),
+    ("requested_start_s", "请求起点 (s)",
+     "蓝框选区原始起点，用于核对掩码把边界修正了多少"),
+    ("requested_end_s", "请求终点 (s)",
+     "蓝框选区原始终点"),
+    ("samples", "有效采样点数",
+     "真正参与计算的采样点数（已扣除被排除的长冲击段）"),
+    ("excluded_samples", "排除点数",
+     "被判为长冲击、未做插值修复的点数；这些点不计入任何幅值/能量统计"),
+    ("duration_s", "有效时长 (s)",
+     "有效采样点数 ÷ 采样率，通常略小于蓝框宽度"),
+    ("mean", "均值 / 直流分量 (FS)",
+     "整段有效数据的算术平均；明显不为 0 说明存在直流偏置，报告需注明"),
+    ("std", "标准差 (FS)",
+     "去均值后的起伏幅度，只反映交流成分，与直流偏置无关"),
+    ("min", "最小瞬时值 (FS)",
+     "单个采样点的最小值（有符号，负半周最深处）"),
+    ("max", "最大瞬时值 (FS)",
+     "单个采样点的最大值（有符号，正半周最高处）"),
+    ("peak_amplitude", "峰值振幅 max|x| (FS)",
+     "正负两侧绝对值的较大者，恒为正值；不是峰峰值"),
+    ("peak_to_peak", "峰峰值 max−min (FS)",
+     "max 减 min，等于波形总摆幅，约为峰值振幅的 2 倍（对称波形）"),
+    ("rms", "有效值 RMS (FS)",
+     "√(mean(x²))，包含直流分量；整周期正弦时 RMS = 峰值 ÷ √2 ≈ 0.707×峰值"),
+    ("rms_dbfs", "RMS 电平 (dBFS)",
+     "20·lg(RMS/FS)，满幅正弦约 −3.01 dBFS；dBFS 是数字满幅相对值，不等于 dB SPL"),
+    ("rms_spl", "等效声压级 (dB SPL)",
+     "RMS 电平 + 校准偏移 K；等效于该区间的能量平均声压级，仅在配置声学校准后出现"),
+    ("peak_spl", "峰值声压级 (dB SPL)",
+     "20·lg(峰值振幅) + K，未计频率计权，仅在配置声学校准后出现"),
+    ("calibration_offset_db", "校准偏移 K (dB)",
+     "dB SPL = dBFS + K；由灵敏度、前置增益与满幅电压推算，或由已知声压级标定得到"),
+    ("calibration_name", "校准配置",
+     "本次换算使用的校准名称；空表示未校准，此时不输出任何 dB SPL"),
+    ("crest_factor", "波峰因数 (峰值/RMS)",
+     "峰值振幅 ÷ RMS；正弦约 1.414，脉冲/冲击性越强该值越大"),
+    ("main_frequency_hz", "主频 (Hz)",
+     "幅值最大谱峰对应的频率；长文件按居中窗口估计，实际窗口见“计算口径”"),
+    ("main_amplitude", "主频振幅 (FS)",
+     "单边幅值谱在主频处的幅值；整周期正弦时约等于峰值振幅"),
+    ("main_amplitude_dbfs", "主频电平 (dBFS)",
+     "20·lg(主频振幅)，用于和本底噪声比较，不是声压级"),
+    ("thd", "总谐波失真 THD",
+     "2～10 次谐波（到奈奎斯特频率为止）幅值的均方根 ÷ 基波幅值；纯正弦接近 0"),
+    ("analysis_scope", "计算口径说明",
+     "声明哪些量基于选区全部采样点、哪些量基于受限 FFT 窗口"),
 )
 
-STATISTIC_LABELS: dict[str, str] = {key: label for key, label, _ in STATISTIC_FIELDS}
-STATISTIC_NOTES: dict[str, str] = {key: note for key, _, note in STATISTIC_FIELDS}
+STATISTIC_LABELS_ZH: dict[str, str] = {key: label for key, label, _ in STATISTIC_FIELDS}
+STATISTIC_NOTES_ZH: dict[str, str] = {key: note for key, _, note in STATISTIC_FIELDS}
+STATISTIC_LABELS: dict[str, str] = {key: tr(label) for key, label, _ in STATISTIC_FIELDS}
+STATISTIC_NOTES: dict[str, str] = {key: tr(note) for key, _, note in STATISTIC_FIELDS}
 
 
-def statistics_rows(stats: dict[str, Any]) -> list[tuple[str, str, Any, str]]:
-    """把统计字典转成 (键名, 中文名, 数值, 释义) 行；未登记的键回退为原键名。"""
+def statistics_rows(
+    stats: dict[str, Any],
+    translate: "Callable[[str], str] | None" = None,
+) -> list[tuple[str, str, Any, str]]:
+    """把统计字典转成 (键名, 名称, 数值, 释义) 行；未登记的键回退为原键名。
+
+    translate 默认为界面的 `tr`；导出报告时传 `core.report_i18n.rt`，
+    普通字表里那份 61 条释义不必维护第二份译文。
+    以 `_` 开头的键是内部标记（例如 `_scope`），不参与表格输出。
+    """
+    render = translate or tr
     rows: list[tuple[str, str, Any, str]] = []
     for key, value in stats.items():
+        if key.startswith("_"):
+            continue
         rows.append((
             key,
-            STATISTIC_LABELS.get(key, key),
+            render(STATISTIC_LABELS_ZH.get(key, key)),
             value,
-            STATISTIC_NOTES.get(key, ""),
+            render(STATISTIC_NOTES_ZH.get(key, "")),
         ))
     return rows
 
@@ -185,11 +205,22 @@ def interval_statistics(
     fourier = fourier_analysis(selected, sample_rate, fundamental_frequency=fundamental_frequency)
     energy_note = tr("RMS/峰值/标准差基于选区全部有效采样点")
     if fourier.analyzed_samples < fourier.total_samples:
+        # analysis_offset 的单位是**秒**（相对选区数组起点），不是采样点；
+        # 报告里要的是文件内的绝对时间，所以加上选区起点的秒数（BUG-017）。
+        window_start_s = (start + first_valid) / sample_rate + float(fourier.analysis_offset)
+        window_end_s = window_start_s + fourier.analyzed_samples / sample_rate
         freq_note = (
-            tf('主频/THD 基于居中窗口 {_v0:,}/{_v1:,} 点（{_v2:.3f}–{_v3:.3f} s）', _v0=(fourier.analyzed_samples), _v1=(fourier.total_samples), _v2=(fourier.analysis_offset), _v3=(fourier.analysis_offset + fourier.analyzed_samples / sample_rate))
+            tf('主频/THD 基于居中窗口 {_v0:,}/{_v1:,} 点（{_v2:.3f}–{_v3:.3f} s）', _v0=(fourier.analyzed_samples), _v1=(fourier.total_samples), _v2=(window_start_s), _v3=(window_end_s))
         )
+        scope_freq: Any = (_SCOPE_WINDOW, {
+            "_v0": fourier.analyzed_samples,
+            "_v1": fourier.total_samples,
+            "_v2": window_start_s,
+            "_v3": window_end_s,
+        })
     else:
         freq_note = tr("主频/THD 基于选区全部有效采样点")
+        scope_freq = _SCOPE_ALL
     # 校准偏移 K：未配置或参数不全时为 None，此时不输出任何 dB SPL 字段。
     # 宁可少给一列，也不要给一个看起来合理、实则没有标定依据的声压级。
     result: dict[str, Any] = {
@@ -215,11 +246,25 @@ def interval_statistics(
         "thd": fourier.thd,
         "analysis_scope": f"{energy_note}；{freq_note}",
     }
+    # 「计算口径」的原文与参数挂在属性上而不是键上：表格、CSV、报告的行集合
+    # 应当只含真正的统计量，多一个键会让列名集合随语言实现细节漂移。
+    result = StatisticValues(result)
+    result.scope_parts = {"energy": _SCOPE_ENERGY, "freq": scope_freq}
     return attach_calibration(result, calibration)
 
 
 # SPL 字段键，attach_calibration 负责成对增删
 _SPL_KEYS = ("rms_spl", "peak_spl", "calibration_offset_db", "calibration_name")
+
+
+class StatisticValues(dict):
+    """统计结果字典。
+
+    `scope_parts` 存「计算口径」的中文原文与参数，供报告按另一种语言重渲染；
+    它是属性不是键，免得统计表、CSV 表头里多出一列内部字段。
+    """
+
+    scope_parts: dict[str, Any] | None = None
 
 
 def attach_calibration(
@@ -237,7 +282,7 @@ def attach_calibration(
     def spl_of(fs_value: float) -> float:
         return float(offset + 20 * np.log10(max(float(fs_value), 1e-15)))
 
-    out: dict[str, Any] = {}
+    out: dict[str, Any] = StatisticValues()
     for key, value in stats.items():
         if key in _SPL_KEYS:
             continue
@@ -252,6 +297,8 @@ def attach_calibration(
         # 追在末尾：这两个是换算依据，读者通常先看数、再回头核对怎么来的。
         out["calibration_offset_db"] = float(offset)
         out["calibration_name"] = str(calibration.name)
+    if isinstance(out, StatisticValues):
+        out.scope_parts = getattr(stats, "scope_parts", None)
     return out
 
 

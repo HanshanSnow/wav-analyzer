@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from core.i18n import tf, tr
 import keyring
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QSettings, QThread, Signal
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QVBoxLayout,
@@ -40,12 +40,17 @@ VENDOR_PRESETS: dict[str, dict] = {
 }
 CUSTOM_VENDOR = tr("自定义（自填 Base URL 与模型名）")
 
+# 预设的「键」是稳定的中文字面量（QSettings 里存的也是它），只在显示时过 tr()。
+# 千万不要拿 tr() 的返回值当字典键：英文模式下它已经变成 "DeepSeek"，查表必崩。
+DEFAULT_VENDOR_KEY = "DeepSeek（深度求索）"
 
-def _guess_vendor(base_url: str) -> str:
+
+def _guess_vendor(base_url: str) -> str | None:
+    """按 Base URL 反查预设键；不属于任何预设时返回 None，表示「自定义」。"""
     for name, preset in VENDOR_PRESETS.items():
         if preset["base_url"].rstrip("/") == base_url.strip().rstrip("/"):
             return name
-    return CUSTOM_VENDOR
+    return None
 
 
 def _load_timeout(stored: QSettings) -> float:
@@ -60,18 +65,43 @@ def _load_timeout(stored: QSettings) -> float:
 
 
 def load_ai_settings() -> AISettings:
-    stored = QSettings("PhysicsExperiment", "SoundWavAnalyzer")
+    stored = QSettings()
     try:
         api_key = keyring.get_password(SERVICE_NAME, "default") or ""
     except Exception:
         api_key = ""
     return AISettings(
-        base_url=stored.value("ai/base_url", VENDOR_PRESETS[tr("DeepSeek（深度求索）")]["base_url"]),
+        base_url=stored.value("ai/base_url", VENDOR_PRESETS[DEFAULT_VENDOR_KEY]["base_url"]),
         model=stored.value("ai/model", ""),
         api_key=api_key,
         temperature=float(stored.value("ai/temperature", 0.2)),
         timeout_s=_load_timeout(stored),
     )
+
+
+class _ConnectProbe(QThread):
+    """在后台线程里发一次测试请求。
+
+    "测试连接"原来直接在界面线程里同步等待网络，慢网或服务无响应时整个窗口
+    会冻住（最长到超时那 120 s），用户连关都关不掉（BUG-007）。
+    """
+
+    done = Signal(str, str)  # ("ok" | "fail", 文本)
+
+    def __init__(self, settings: AISettings, parent=None):
+        super().__init__(parent)
+        self._settings = settings
+
+    def run(self) -> None:
+        client = None
+        try:
+            client = OpenAICompatibleClient(self._settings)
+            self.done.emit("ok", client.test_connection())
+        except Exception as exc:  # noqa: BLE001 - 任何失败都要变成可读提示
+            self.done.emit("fail", str(exc))
+        finally:
+            if client is not None:
+                client.close()
 
 
 class AISettingsDialog(QDialog):
@@ -82,8 +112,12 @@ class AISettingsDialog(QDialog):
         settings = load_ai_settings()
 
         self.vendor = QComboBox()
-        self.vendor.addItems([*VENDOR_PRESETS.keys(), CUSTOM_VENDOR])
-        self.vendor.setCurrentText(_guess_vendor(settings.base_url))
+        # 显示名过 tr()、用户数据留原始键：英文界面显示 "DeepSeek"，存盘仍是稳定键
+        for name in VENDOR_PRESETS:
+            self.vendor.addItem(tr(name), name)
+        self.vendor.addItem(CUSTOM_VENDOR, None)
+        self.vendor.setCurrentIndex(
+            max(0, self.vendor.findData(_guess_vendor(settings.base_url))))
 
         self.base_url = QLineEdit(settings.base_url)
         self.base_url.setPlaceholderText(tr("例如：https://api.deepseek.com/v1"))
@@ -150,6 +184,8 @@ class AISettingsDialog(QDialog):
 
         test_button = QPushButton(tr("测试连接"))
         test_button.clicked.connect(self.test_connection)
+        self.test_button = test_button
+        self._probe: _ConnectProbe | None = None
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         buttons.button(QDialogButtonBox.Save).setText(tr("保存"))
         buttons.button(QDialogButtonBox.Cancel).setText(tr("取消"))
@@ -167,12 +203,13 @@ class AISettingsDialog(QDialog):
         layout.addWidget(self.privacy_note)
         layout.addLayout(row)
 
-        self.vendor.currentTextChanged.connect(self._apply_vendor)
-        self._apply_vendor(self.vendor.currentText(), keep_model=True)
+        self.vendor.currentIndexChanged.connect(self._apply_vendor)
+        self._apply_vendor(keep_model=True)
 
     # ------------------------------------------------------------ 厂商预设
-    def _apply_vendor(self, vendor_name: str, keep_model: bool = False) -> None:
-        preset = VENDOR_PRESETS.get(vendor_name)
+    def _apply_vendor(self, *_: object, keep_model: bool = False) -> None:
+        """按当前选中的预设键填 Base URL 与模型名；自定义项的键是 None。"""
+        preset = VENDOR_PRESETS.get(self.vendor.currentData())
         if preset is None:
             self.base_url.setReadOnly(False)
             self.base_url.setStyleSheet("")
@@ -199,16 +236,27 @@ class AISettingsDialog(QDialog):
         )
 
     def test_connection(self) -> None:
-        client = None
-        try:
-            client = OpenAICompatibleClient(self.settings())
-            message = client.test_connection()
+        if self._probe is not None:
+            return
+        self.test_button.setEnabled(False)
+        self.test_button.setText(tr("正在测试…"))
+        probe = _ConnectProbe(self.settings(), self)
+        probe.done.connect(self._probe_finished)
+        probe.finished.connect(probe.deleteLater)
+        self._probe = probe
+        probe.start()
+
+    def _probe_finished(self, kind: str, message: str) -> None:
+        self._probe = None
+        self.test_button.setEnabled(True)
+        self.test_button.setText(tr("测试连接"))
+        if kind == "ok":
             QMessageBox.information(self, tr("连接测试"), message)
-        except Exception as exc:
-            QMessageBox.warning(self, tr("连接失败"), tf('{exc}\n\n请依次检查：API Key 是否正确、Base URL 是否可用、模型名是否存在。', exc=(exc)))
-        finally:
-            if client:
-                client.close()
+        else:
+            QMessageBox.warning(
+                self, tr("连接失败"),
+                tf('{exc}\n\n请依次检查：API Key 是否正确、Base URL 是否可用、模型名是否存在。',
+                   exc=(message)))
 
     def accept(self) -> None:
         base_url = self.base_url.text().strip()
@@ -224,10 +272,10 @@ class AISettingsDialog(QDialog):
             )
             if answer != QMessageBox.Yes:
                 return
-        stored = QSettings("PhysicsExperiment", "SoundWavAnalyzer")
+        stored = QSettings()
         stored.setValue("ai/base_url", base_url)
         stored.setValue("ai/model", model)
-        stored.setValue("ai/vendor", self.vendor.currentText())
+        stored.setValue("ai/vendor", self.vendor.currentData() or "")
         stored.setValue("ai/temperature", self.temperature.value())
         stored.setValue(TIMEOUT_SETTINGS_KEY, self.timeout.value())
         # Key 只有钥匙串一条保存路径，没有“写进注册表”的退路，
@@ -243,4 +291,17 @@ class AISettingsDialog(QDialog):
             key_note = tf('\n\n⚠ Key 未能写入 Windows 钥匙串：{exc}\n下次启动需要重新填写。', exc=(exc))
         if key_note:
             QMessageBox.warning(self, tr("钥匙串不可用"), tr("其余设置已保存。") + key_note)
+        # 保存后立刻读回一次：写盘失败（目录只读、设置文件被占用）时，
+        # 不能让用户以为已经存好了，否则下次打开又回到「未填写」。
+        saved = load_ai_settings()
+        lost = []
+        if saved.model.strip() != model:
+            lost.append(tr("模型名称"))
+        if saved.base_url.strip() != base_url:
+            lost.append("Base URL")
+        if lost:
+            QMessageBox.warning(
+                self, tr("设置没有存住"),
+                tf('{_v0} 没能写入设置文件：{_v1}\n\n请把程序放到可写目录后再保存。',
+                   _v0=("、".join(lost)), _v1=(str(QSettings().fileName()))))
         super().accept()

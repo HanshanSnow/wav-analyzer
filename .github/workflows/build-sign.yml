@@ -1,0 +1,148 @@
+name: Build and sign (Windows)
+
+# 目的：在 GitHub 的 Windows runner 上构建 exe，交给 SignPath Foundation 签名，
+# 再把「签名后的 exe + 文档 + 手册」打成一个 zip 挂到 Release。
+#
+# 为什么必须走 CI：SignPath 的免费证书是签在「SignPath Foundation」名下的，
+# 它的前提是——二进制由你的公开仓库在 CI 里构建，他们核实产物确实来自该仓库。
+# 本地打好 exe 再上传给它签，这条路是走不通的。
+#
+# 启用前必须做的四件事（详见 docs/signing.md）：
+#   1. 仓库设为 Public
+#   2. 在 https://signpath.org/apply 申请，拿到 organization / project / policy 三个标识
+#   3. 仓库 Settings → Secrets and variables → Actions 里加 SIGNPATH_API_TOKEN
+#   4. 把下面 sign 任务里的三个 XXX 占位符换成你的实际标识，并取消 `if: false`
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: 构建未签名 exe
+    runs-on: windows-latest
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+
+      - name: 跑测试
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q
+
+      - name: 打包 exe
+        run: python -m PyInstaller --noconfirm --clean WAV_Analyzer.spec
+
+      - name: 打包文件夹版（onedir）
+        run: python -m PyInstaller --noconfirm --clean WAV_Analyzer_onedir.spec
+
+      - name: 冻结版自检（两种形态都要通过）
+        shell: pwsh
+        env:
+          WAV_ANALYZER_SELFTEST: ${{ github.workspace }}\demo\demo_tone.wav
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $forms = @('dist\WAV Analyzer.exe', 'dist\WAV Analyzer\WAV Analyzer.exe')
+          foreach ($exe in $forms) {
+            Remove-Item demo\selftest_result.json -ErrorAction SilentlyContinue
+            $proc = Start-Process -FilePath (Resolve-Path $exe) -Wait -PassThru
+            if (-not (Test-Path demo\selftest_result.json)) { throw "自检未产出结果：$exe" }
+            $report = Get-Content demo\selftest_result.json -Raw | ConvertFrom-Json
+            if (-not $report.ok) { throw "自检失败：$exe" }
+            if (-not $report.steps.manual_pdf_present) { throw "手册 PDF 没打进包：$exe" }
+            if (-not $report.steps.icon_present) { throw "图标没打进包（任务栏会显示宿主进程图标）：$exe" }
+            Write-Host "selftest OK（$($report.steps.i18n_en_entries) 条英文条目）：$exe"
+          }
+
+      - name: 上传未签名产物
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: wav-analyzer-unsigned
+          path: |
+            dist/WAV Analyzer.exe
+            dist/WAV Analyzer/
+          if-no-files-found: error
+
+      - name: 组装发布包（不含 exe，exe 走签名流程）
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Copy-Item README.md, README.zh-CN.md, CHANGELOG.md, LICENSE release/
+          Copy-Item docs/manual_en.pdf release/WAV_Analyzer_Manual_EN_v2.0.0.pdf
+          Copy-Item docs/manual_zh.pdf release/WAV_Analyzer_Manual_v2.0.0.pdf
+          Get-ChildItem release | Select-Object Name, Length
+
+      - name: 上传文档部分
+        uses: actions/upload-artifact@v4
+        with:
+          name: wav-analyzer-docs
+          path: release/*
+          if-no-files-found: error
+
+  sign:
+    name: SignPath 签名
+    needs: build
+    runs-on: ubuntu-latest
+    # 没配好 SignPath 之前先跳过，避免 CI 一直是红的
+    if: false
+    steps:
+      - name: 提交签名请求
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: "XXX-organization-id"
+          project-slug: "XXX-project-slug"
+          signing-policy-slug: "release-signing"   # 常用值，按你申请到的策略改
+          artifact-configuration-slug: "exe"
+          github-artifact-id: ${{ needs.build.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: 上传签名后的 exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: wav-analyzer-signed
+          path: signed/WAV Analyzer.exe
+          if-no-files-found: error
+
+  release:
+    name: 挂到 Release
+    needs: [build, sign]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: wav-analyzer-signed
+          path: release
+      - uses: actions/download-artifact@v4
+        with:
+          name: wav-analyzer-docs
+          path: release
+      - name: 打包 zip
+        run: |
+          cd release
+          sha256sum "WAV Analyzer.exe" > checksums.txt
+          zip -9 "../WAV_Analyzer_${GITHUB_REF_NAME#v}_win64.zip" *
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            WAV_Analyzer_*_win64.zip
+            release/WAV Analyzer.exe

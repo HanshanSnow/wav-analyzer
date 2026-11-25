@@ -18,7 +18,14 @@ from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtGui import QColor, QPalette  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-OUT = ROOT / "docs" / "figures"
+SHOT_LANG = (os.environ.get("SHOT_LANG") or "zh").strip().lower()
+_IS_EN = SHOT_LANG == "en"
+# 英文手册用 figures_en/，中文手册用 figures/
+OUT = ROOT / "docs" / ("figures_en" if _IS_EN else "figures")
+
+
+def msg(zh: str, en: str) -> str:
+    return en if _IS_EN else zh
 
 
 def light_palette() -> QPalette:
@@ -49,14 +56,20 @@ def main() -> None:
     app.setStyle("Fusion")
     app.setPalette(light_palette())
 
+    from core.i18n import set_language
+
+    # 必须在 import app.* 之前：界面文案常量在 import 时求值
+    set_language(SHOT_LANG)
+
     from app.calibration_dialog import CalibrationDialog
     from core.calibration import Calibration, MODE_REFERENCE
 
     dialog = CalibrationDialog(
         None,
-        profiles=[Calibration(name="电容麦 + 前置 20 dB", sensitivity_mv_pa=12.6,
+        profiles=[Calibration(name=msg("电容麦 + 前置 20 dB", "Condenser mic + 20 dB preamp"),
+                              sensitivity_mv_pa=12.6,
                               preamp_gain_db=20.0, adc_full_scale_vrms=1.0)],
-        active="电容麦 + 前置 20 dB",
+        active=msg("电容麦 + 前置 20 dB", "Condenser mic + 20 dB preamp"),
         current_dbfs=-32.47,
     )
     dialog.resize(660, 560)
@@ -69,9 +82,10 @@ def main() -> None:
     # 第二张：两点标定那一支
     dialog2 = CalibrationDialog(
         None,
-        profiles=[Calibration(name="声级校准器 94 dB", mode=MODE_REFERENCE,
+        profiles=[Calibration(name=msg("声级校准器 94 dB", "Sound level calibrator 94 dB"),
+                              mode=MODE_REFERENCE,
                               ref_spl_db=94.0, ref_dbfs=-39.98)],
-        active="声级校准器 94 dB",
+        active=msg("声级校准器 94 dB", "Sound level calibrator 94 dB"),
         current_dbfs=-39.98,
     )
     dialog2.resize(660, 560)

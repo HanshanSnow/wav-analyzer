@@ -17,6 +17,8 @@
 \usepackage{fancyhdr}
 \usepackage{listings}
 \usepackage[hidelinks]{hyperref}
+\usepackage{tikz}
+\usetikzlibrary{positioning}
 
 % ---------- Fonts ----------
 \setCJKmainfont{SimSun}[BoldFont=SimHei,ItalicFont=KaiTi]
@@ -54,12 +56,12 @@
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[L]{\small Sound Experiment WAV Data Processing Program · Detailed User Manual}
-\fancyhead[R]{\small Version 1.6.1}
+\fancyhead[R]{\small Version 2.0.0}
 \fancyfoot[C]{\thepage}
 \renewcommand{\headrulewidth}{0.4pt}
 
 % ---------- Graphics path ----------
-\graphicspath{{figures/}}
+\graphicspath{{figures_en/}{figures/}}
 
 \begin{document}
 
@@ -69,7 +71,7 @@
 \vspace*{2.5cm}
 {\fontsize{22}{26}\selectfont\bfseries Sound Experiment WAV Data Processing Program}\\[0.8cm]
 {\fontsize{26}{30}\selectfont\bfseries Detailed User Manual}\\[1.2cm]
-{\large Version 1.6.1}\\[0.3cm]
+{\large Version 2.0.0}\\[0.3cm]
 {\large November 20, 2026}\\[0.6cm]
 {\large Portable Edition (Windows 64-bit, no environment setup required)}\\[2.0cm]
 
@@ -148,6 +150,17 @@ If in the future you need to build from source yourself, install the dependencie
 \subsection{Installation and Startup}
 
 This is a portable version and requires no installation. Place \texttt{WAV Analyzer.exe} in any directory (a dedicated folder is recommended) and double-click to start. The first launch is slightly slower as the program unpacks its built-in components; this is normal.
+
+Two builds are published and they are functionally identical; \textbf{the folder build is recommended}:
+
+\begin{itemize}
+  \item \textbf{Single-file build}: one \texttt{WAV Analyzer.exe}. It unpacks its bundled components into the system temp directory at startup -- convenient to copy, but the first launch takes a few seconds.
+  \item \textbf{Folder build}: a \texttt{WAV Analyzer} directory containing an \texttt{\_internal} subdirectory. The program files sit next to the exe, so \textbf{startup never touches the temp directory}; it is faster to start and more reliable on machines where the temp directory is not writable.
+\end{itemize}
+
+If the single-file build reports \texttt{Could not create temporary directory!}, the current account cannot write to the system temp directory: switch to the folder build, or move the program into a directory you can write to (avoid locations such as \texttt{C:\textbackslash Program Files}). The folder build must be copied as a whole; the exe alone will not run.
+
+Neither build writes to system directories or registers services. Settings are stored in a \texttt{PhysicsExperiment} folder next to the program; if that location is not writable the program falls back to the system settings store.
 
 If Windows shows ``protected your PC'', choose ``More info'' $\to$ ``Run anyway''; this is because the program has no code-signing certificate, not because it is a virus.
 
@@ -356,6 +369,233 @@ After denoising is applied, the label on the left shows the number of detected e
 The automatic threshold has been validated on synthetic signals, but real experimental data may contain different kinds of taps, clipping and electromagnetic interference, so the automatic result must be reviewed manually. When reviewing, focus on: whether normal peaks were falsely marked, whether the impulse start and end points are accurate, and whether the excluded intervals covered valid signal. If false marks are frequent, raise the threshold, shorten the maximum repair length, and check whether the data is clipped or has a DC offset.
 
 % ==================== Chapter 9 ====================
+\section{Denoising Tools}
+
+\subsection{Why restraint matters}
+
+Denoising targets noise, but almost every denoiser also touches the signal: amplitude is pulled down, phase is shifted, transients are flattened. Most results in this program rest on amplitude --- dB SPL derives from RMS, THD is a ratio of harmonic to fundamental amplitude, envelope decay rates come from the slope of a logarithmic envelope, and the two-channel level ratio is a difference of two RMS values. A clean-looking waveform therefore does not mean trustworthy numbers: a canceller that shaves 2\,dB off the signal makes every sound-pressure level 2\,dB too low while the spectrum still looks fine.
+
+The program's stance:
+
+\begin{itemize}[leftmargin=2em]
+  \item all six methods are off by default; diagnostics are computed first, a human confirms, and only then is the processed version written;
+  \item when a guard fails you get the diagnostics and the refusal reason, and the data is left untouched;
+  \item processed data carry the method name and every diagnostic in the interface, in the TXT/HTML report and in the batch comparison table;
+  \item the source file stays read-only and the result can be undone.
+\end{itemize}
+
+\subsection{Signal flow and symbols}
+
+Let $d(n)$ be the target channel (the channel currently selected), $x(n)$ the reference channel (the other channel, or a second file), $s(n)$ the wanted signal, $n_1(n)$ the noise on the target, and $h$ the reference-to-target transfer filter. Ideally $d(n)=s(n)+n_1(n)$ and the reference carries only correlated noise, so $h$ predicts the noise and subtracts it:
+
+\[
+\hat{s}(n)=d(n)-\big(h*x\big)(n).
+\]
+
+\begin{figure}[htbp]
+\centering
+\begin{tikzpicture}[>=stealth, node distance=14mm, font=\small]
+  \node (s) {$s(n)$};
+  \node[right=of s] (sum) [circle, draw, inner sep=1pt, minimum size=6mm] {$+$};
+  \node[right=of sum] (d) {$d(n)$};
+  \node[below=of s] (n) {$n_1(n)$};
+  \node[below=22mm of sum] (x) {$x(n)$};
+  \node[right=22mm of x] (h) [draw, rectangle, minimum width=16mm, minimum height=8mm] {$h$};
+  \node[right=14mm of h] (minus) [circle, draw, inner sep=1pt, minimum size=6mm] {$-$};
+  \node[right=14mm of minus] (out) {$\hat{s}(n)$};
+  \draw[->] (s) -- (sum);
+  \draw[->] (n) -- (sum);
+  \draw[->] (sum) -- (d);
+  \draw[->] (x) -- (h);
+  \draw[->] (h) -- (minus);
+  \draw[->] (d.south) .. controls +(0,-10mm) and +(0,10mm) .. (minus.north);
+  \draw[->] (minus) -- (out);
+\end{tikzpicture}
+\caption{Signal flow of the denoising tools: the reference path predicts the target noise through $h$, which is then subtracted.}
+\label{fig:anc-flow-en}
+\end{figure}
+
+The symbols match the names in the code:
+
+\begin{longtable}{@{}lll@{}}
+\toprule
+Symbol & Meaning & Name in code and interface \\
+\midrule
+\endhead
+$d(n)$ & target channel samples & selected channel \\
+$x(n)$ & reference channel samples & the other channel \\
+$s(n)$ & wanted signal & --- \\
+$h$ & reference-to-target filter & filter taps $N$ \\
+$N$ & filter order (taps) & taps, default 2048 \\
+$M$ & training samples & noise-segment samples \\
+$\lambda$ & regularisation weight & $10^{-5}\cdot\mathrm{tr}(X^{\mathsf T}X)/N$ \\
+$\gamma^2(f)$ & magnitude-squared coherence & coherence diagnostic \\
+$\gamma_s^2(f)$ & signal coherence leaking into the target & leakage estimate \\
+ERLE & echo/noise reduction (dB) & whole-file/holdout ERLE \\
+$\Delta L_{\rm sys}$ & systematic bias from denoising (dB) & main-frequency change, combined uncertainty \\
+\bottomrule
+\end{longtable}
+
+\subsection{The six methods}
+
+\textbf{Synchronous averaging (trigger aligned).} Use when the same excitation repeats with a recognisable trigger; no reference channel is needed. Frame a stretch on the waveform as the template, open the tools, pick this method and press ``Analyse and apply''. The program finds repeated triggers, aligns them by cross-correlation to sub-sample and averages; at least four repeats are required. The coherent signal adds linearly and random noise falls as $\sqrt{N}$, so the signal amplitude is unchanged; the error comes from trigger jitter:
+
+\[
+\frac{A_{\rm out}}{A_{\rm in}}=\exp\!\left(-2\pi^{2}f_0^{2}\sigma_t^{2}\right),
+\qquad
+\Delta L_{\rm TSA}=-171.5\,f_0^{2}\sigma_t^{2}\ {\rm dB}.
+\]
+
+At $f_0=1$\,kHz and $\sigma_t=100\,\mu$s this is $-1.7$\,dB; at $10\,\mu$s it is $-0.017$\,dB. The implementation aligns each repeat before averaging, which removes most of the jitter, so the measured amplitude loss is usually far below the unaligned formula; both the formula value and the measured loss are reported. It fails when fewer than four repeats are found, when fewer than two whole periods are available, or when the trigger spacing is under half a period (beating, continuous sweeps).
+
+\textbf{Narrowband notch (zero phase).} Use when the interference is a narrow tone: mains hum and its harmonics, a single whistle. Choose the centre frequency (default 50\,Hz), the Q (default 30) and whether to include 100/150\,Hz, and the dialog shows the effect on the current main frequency live. The gain follows
+
+\[
+|H(f)|^{2}=\frac{1}{1+\left(\dfrac{f_n}{2Q\,|f-f_n|}\right)^{2}},
+\qquad
+\Delta L_{\rm notch}(f)=10\log_{10}|H(f)|^{2}.
+\]
+
+The program uses a second-order IIR notch filtered in both directions (zero phase), so the realised attenuation is twice the single-pass value: with $f_n=50$\,Hz and $Q=30$ the attenuation is $-0.05$\,dB at 5.45\,Hz off centre and $-0.1$\,dB for the bidirectional pass, while a 1\,kHz main frequency is essentially untouched ($3\times10^{-6}$\,dB). If the computed effect exceeds 0.1\,dB the dialog suggests a smaller Q. It fails for broadband hum, for a main frequency inside the notch skirt, and on very short signals where the edge transients of zero-phase filtering matter.
+
+\textbf{Frozen two-pass regularised least squares (default).} Use with a stereo file that has a genuinely noise-only stretch; the reference may carry a little signal. The filter is estimated on the noise segment only and then frozen for the whole file: the segment has no signal, so $h$ cannot learn the signal path, and the signal is not cancelled as ``predictable content'' --- which is exactly what a full-length adaptive canceller does when both microphones hear the excitation. Parameters: taps $N$ (default 2048, more taps fit longer reverberation but need $8N$ samples) and $\lambda=10^{-5}\mathrm{tr}(X^{\mathsf T}X)/N$. With the signal coherence leaking into the target denoted $\gamma_s^2(f_0)$, least squares removes that fraction of the predictable power at the main frequency:
+
+\[
+\frac{A_{\rm out}}{A_{\rm in}}(f)=\sqrt{1-\gamma_s^{2}(f)},
+\qquad
+\Delta L_{\rm sys}(f)=10\log_{10}\!\left[1-\gamma_s^{2}(f)\right]\ {\rm dB}.
+\]
+
+This is a \emph{systematic} bias, not a random error, and it propagates straight into dB SPL, THD and envelope decay rates. The criterion $|\Delta L_{\rm sys}|\le 0.5$\,dB is equivalent to $\gamma_s^2\le 0.109$. The leakage itself is estimated from the predictable share of the tone power (valid for narrowband excitation, where the noise contribution at $f_0$ is negligible):
+
+\[
+\hat\gamma_s^{2}(f_0)=\frac{P_{\rm pred}(f_0)}{P_d(f_0)},
+\qquad
+P_{\rm pred}=\left|{\rm FFT}(\hat h * x)\right|^{2}\Big|_{f_0}.
+\]
+
+The cancellation ceiling and the finite-sample degradation are
+
+\[
+{\rm ERLE}_{\max}(f)=-10\log_{10}\!\left[1-\gamma_{xd}^{2}(f)\right],
+\qquad
+{\rm ERLE}(f)\approx-10\log_{10}\!\left[(1-\gamma_{xd}^{2}(f))+\frac{N}{M}\right],
+\]
+
+where the second form is an approximation and $N/M$ is the variance inflation from estimating $N$ coefficients with $M$ samples. It fails when no stationary noise segment exists, when the segment has fewer than $8N$ samples, when holdout ERLE is below 6\,dB, or when the coherence at the main frequency is high because both channels hear the signal.
+
+\textbf{Wiener cancellation with a clean reference path.} Use only when the reference microphone hears noise and no signal at all; then the full-length least-squares solution is optimal and no noise segment is needed. Theoretically $\gamma_s^2=0$ and $\Delta L_{\rm sys}=0$, but the program still computes the coherence at the main frequency as a \emph{counter-proof}: above 0.5 it refuses and suggests the frozen two-pass method. It fails when the reference is simply the second microphone on the excitation (the common misuse), when the reference is all zeros, or when the two paths differ in length.
+
+\textbf{Block adaptive cancellation trained on the noise segment.} Use when the noise drifts slowly (fan speed, temperature) and the noise segment is long enough. The filter is solved on the noise segment and then refined every 10\,s with a forgetting factor of 0.995. The systematic bias follows the same $\Delta L_{\rm sys}$ formula; the extra risk is that a block containing signal would let the filter learn the signal, so blocks without a detectable noise stretch fall back to the frozen filter, and the per-block ERLE curve is reported. It fails when the noise is non-stationary and no quiet stretch exists, when blocks are shorter than $8N$ samples, or when holdout ERLE is insufficient.
+
+\textbf{Frequency-domain Wiener cancellation of stationary noise.} Use for stationary noise, a signal-free reference and long reverberation, where a time-domain FIR order is hard to choose. The optimum is $H(f)=S_{xd}(f)/S_{xx}(f)$, estimated from Welch cross-spectra and limited to $|H|\le1$ to prevent inverted amplification, then applied to the whole file with zero phase. The bias still follows the coherence formula per frequency bin. The frequency-domain implementation adds no delay but reshapes transient envelopes (which biases decay-rate measurements), and the report says so. It fails when the reference carries signal (the same coherence counter-proof applies), when the noise is non-stationary, or when the signal is too short for cross-spectrum estimation.
+
+\textbf{Independent noise profile (spectral subtraction).} Use when the reference is a \emph{separately recorded stretch of stationary noise} that is \emph{not} aligned with the target: two recordings, different clocks, or a reference longer or shorter than the target. The four cancellation methods above all require simultaneous, sample-aligned capture, so this is the case they cannot cover. The static noise power spectrum $P_n(f)$ is estimated once with Welch on the reference (no per-frame updating); the target is then analysed in short frames, and the prior SNR is estimated with the decision-directed recursion
+\[
+\hat\xi_k=\alpha\,\hat\xi_k^{\text{prev}}+(1-\alpha)\max\!\left(\frac{|Y_k|^2}{P_n(f_k)}-1,\,0\right),
+\qquad
+G_k=\frac{\hat\xi_k}{1+\hat\xi_k},
+\]
+with the gain floored at $-34$\,dB and overlap-added back. $\alpha$ defaults to 0.98: the previous frame's estimate ties the gain together along time, which is exactly what per-frame independent spectral subtraction lacks---that is why the program's first attempt produced musical noise and moved energy into other bands. Guardrails, each of which refuses the step with a stated reason: reference shorter than 0.5\,s; first and second halves differing by more than 12\,dB of broadband power (non-stationary); a strong tone at the target's fundamental inside the reference (it would be subtracted as noise); noise exceeding 50\% of the power at the fundamental; and a fundamental amplitude change beyond 1\,dB. A pure tone passes through with unity gain, so the method does not shift levels. It estimates no transfer function, so the report quotes measured ERLE and the fundamental change rather than a coherence interpretation. It fails when the noise itself drifts (fan speed, air conditioning cycling), when excitation leaks into the reference, or when the two recordings contain genuinely different noise.
+
+\subsection{Uncertainty formulas and worked numbers}
+
+Every analysis reports two quantities: the systematic bias $\Delta L_{\rm sys}$ introduced by denoising and the combined standard uncertainty $u_c$:
+
+\[
+u_c(f)=\sqrt{\Delta L_{\rm sys}^{2}(f)+u_{\rm rand}^{2}(f)},
+\qquad
+u_{\rm rand}(f)\approx 20\log_{10}\!\left(1+\frac{1}{\sqrt{M_{\rm eff}}}\right)\ {\rm dB},
+\]
+
+where $M_{\rm eff}$ is the effective number of averages at that frequency: the number of repeats for synchronous averaging, the number of Welch segments for frequency-domain methods, and 1 for time-domain least squares. The first term is the bias denoising introduces, the second the random error of the spectrum estimate; neither substitutes for the other.
+
+Worked examples: with $\Delta L_{\rm sys}=-0.3$\,dB and $M_{\rm eff}=8$, $u_{\rm rand}=20\log_{10}(1+1/\sqrt8)=0.97$\,dB and $u_c=\sqrt{0.09+0.94}=1.01$\,dB. With a single measurement ($M_{\rm eff}=1$), $u_{\rm rand}=6.02$\,dB, and the sensible response is more averaging rather than more denoising. The phase bound is $|\Delta\varphi|\le\arcsin\gamma_s$: at $\gamma_s^2=0.109$ this is about 19$^\circ$, which belongs in any report that relies on dual-channel phase.
+
+\subsection{Accept-or-abandon criteria}
+
+\noindent\begin{longtable}{@{}p{0.5\textwidth}p{0.4\textwidth}@{}}
+\toprule
+Guard & Meaning \\
+\midrule
+\endhead
+holdout ERLE $\ge 6$\,dB & $h$ still predicts on noise it never saw, so it learned the transfer path rather than overfitting \\
+$|\Delta A(f_0)|\le 0.5$\,dB & measured main-frequency change before and after; equivalent to $\gamma_s^2\le 0.109$ \\
+coherence $\gamma^2_{xd}(f_0)\le 0.9$ & above 0.9 the two channels hear the same signal and cancellation must damage it \\
+leakage $\hat\gamma_s^2\le 0.11$ & signal leakage estimated from the predictable power share \\
+noise segment $M\ge 8N$ & $N$ coefficients need at least eight samples each, otherwise variance inflation eats the gain \\
+synchronous averaging over $\ge 4$ repeats & fewer repeats give little $\sqrt N$ suppression and more random error \\
+notch effect on the main frequency $\le 0.1$\,dB & if the main frequency sits in the notch skirt, use a smaller Q \\
+\bottomrule
+\end{longtable}
+
+The 0.5\,dB threshold follows from $\Delta L_{\rm sys}=10\log_{10}(1-\gamma_s^2)=-0.5$\,dB, i.e. $\gamma_s^2=1-10^{-0.05}=0.109$: allowing half a decibel of bias is the same as allowing the reference path to leak 10.9\,\% of the signal power. The code constant is \texttt{MAX\_LEAK\_COHERENCE = 0.11}.
+
+Abandon denoising when holdout ERLE stays below 6\,dB (the reference barely predicts the noise), when the main-frequency coherence exceeds 0.9 (reference and signal are mixed), when the noise segment is shorter than $8N$, or when one measurement's random error already exceeds the denoising gain. The right response is to change the experiment --- longer silent lead-in, a better reference position, more repeats --- not to keep turning parameters.
+
+\subsection{Relation to SPL, THD, envelopes and dual-channel analysis}
+
+\begin{longtable}{@{}p{0.26\textwidth}p{0.62\textwidth}@{}}
+\toprule
+Result & Usable after denoising? \\
+\midrule
+\endhead
+dB SPL & \textbf{No}. Denoising changes amplitude and the level follows; the interface shows ``---'' for denoised data and the report says why \\
+THD & Not as an absolute value: harmonics may be suppressed too and the ratio is biased; compare only under identical denoising settings \\
+Envelope, decay rate & Time-domain methods perturb less; frequency-domain methods reshape transients, which must be stated \\
+Two-channel delay and level ratio & \textbf{No}. Phase and delay change and the level ratio is biased; the step is disabled after denoising by default \\
+Batch comparison & Yes, provided every file uses the same method and parameters; the comparison table carries a method column \\
+\bottomrule
+\end{longtable}
+
+\subsection{Common misuse}
+
+\begin{enumerate}[leftmargin=2em]
+  \item Both microphones hear the excitation but ``clean reference Wiener'' is chosen: ERLE looks excellent (20--30\,dB) because the signal is cancelled too, and levels end up several dB low.
+  \item No silent lead-in, yet the frozen two-pass method is used: the noise segment lands on signal, $h$ learns the signal path, and the effect equals the first mistake.
+  \item Treating large ERLE as success. ERLE only says the removed component was predictable from the reference; it does not say whether that component was noise or signal. The verdict needs holdout ERLE and $\Delta L_{\rm sys}$ together.
+  \item Computing SPL or a two-channel level ratio from denoised data.
+  \item Tuning Q or the tap count until the picture looks clean and then reusing that setting on every file; parameters belong to the noise, and must be recorded.
+  \item Treating the independent noise profile as a catch-all. It needs the reference to be \emph{the same kind of stationary noise} as in the target. A different room, a different microphone, or noise that changes over time (fan speed) invalidates the static spectrum; check stationarity first instead of adjusting parameters.
+\end{enumerate}
+
+\subsection{Formula and code consistency}
+
+Every constant in this chapter exists in the code under the same name and value, and \texttt{tests/test\_anc.py} recomputes the closed forms: 171.5 (TSA coefficient), 0.5\,dB (allowed bias), 0.109 (corresponding leakage limit), 0.11 (leakage guard in code), 8 (samples per tap), 4 (minimum repeats), default order 2048, default Q 30 and default notch centre 50\,Hz. If the manual and the interface ever disagree, the code constant wins and the discrepancy is a bug.
+
+\section{Project Files}
+
+A complete measurement usually involves repeated changes to the window function, calibration, denoising and the selection. A project file (\texttt{.wavproj}) keeps the source audio, the recipe of edits and the analysis settings in a readable JSON file so work can continue later.
+
+\subsection{What is stored}
+
+The project does \textbf{not} store processed samples (a five-minute stereo result at 48\,kHz would be about 115\,MB and duplicates the source). It stores:
+
+\begin{itemize}[leftmargin=2em]
+  \item the source file's absolute path, name, SHA-256 and sample information;
+  \item the applied steps: impulse denoising (threshold, maximum repair length), denoising tools (method, noise segment, taps and other parameters) and trimming (start and end);
+  \item the selected channel, the blue selection, the excitation frequency, the envelope model, the analysis window and the report language;
+  \item the acoustic calibration profiles.
+\end{itemize}
+
+Loading replays the steps in order and recomputes spectrum, envelope and statistics. Because only parameters are replayed, results match only while the source file is unchanged.
+
+\subsection{How to use it}
+
+\begin{enumerate}[leftmargin=2em]
+  \item ``Save project…'' defaults to the audio file's name with the \texttt{.wavproj} suffix; keeping it next to the audio is recommended.
+  \item ``Open project…'' opens the source audio, replays every step and reports how many steps were replayed.
+  \item If the source moved, the program asks you to put it back; if its hash changed, it says that the recorded steps no longer belong to this audio and lets you decide whether to replay anyway.
+\end{enumerate}
+
+\subsection{Caveats}
+
+\begin{itemize}[leftmargin=2em]
+  \item ``Apply changes to source'' overwrites the audio and writes a \texttt{.bak-<timestamp>.wav} backup; opening an older project afterwards triggers the hash warning, and the project should be saved again.
+  \item The undo stack is not stored: after loading a project you cannot undo back past it, so save a second project if you need to compare.
+  \item A project file contains no personal information and no audio samples, so it can be archived with the lab notes.
+\end{itemize}
+
 \section{Playback and Editing}
 
 \subsection{Playing the Selection or the Whole File}
@@ -1201,8 +1441,8 @@ File & Description \\
 \midrule
 \texttt{WAV Analyzer.exe} & the program body, run by double-clicking \\
 \texttt{README.md} & quick start and FAQ \\
-\nolinkurl{WAV_Analyzer_Manual_EN_v1.6.1.pdf} & this manual (English, 57 pp.) \\
-\nolinkurl{WAV_Analyzer_Manual_v1.6.1.pdf} & the Chinese manual, same content in 46 pp. \\
+\nolinkurl{WAV_Analyzer_Manual_EN_v2.0.0.pdf} & this manual (English, 66 pp.) \\
+\nolinkurl{WAV_Analyzer_Manual_v2.0.0.pdf} & the Chinese manual, same content in 55 pp. \\
 \texttt{demo/} & optional: synthetic demo data and report samples \\
 \bottomrule
 \end{tabular}
@@ -1210,10 +1450,11 @@ File & Description \\
 
 \section{Version Notes}
 
-This manual corresponds to version 1.6.1 of the program (portable distribution, Windows 64-bit). All 155 automated tests pass, covering the core algorithms, interface interaction, interface language, the large-file processing pipeline, the batch pipeline, acoustic calibration, image export, text export, and report export. The automatic denoising threshold has been validated on synthetic signals, but when applied to real experimental data it should still be reviewed against the waveform, spectrum and spectrogram.
+This manual corresponds to version 2.0.0 of the program (portable distribution, Windows 64-bit). All 285 automated tests pass, covering the core algorithms, interface interaction, interface language, the large-file processing pipeline, the batch pipeline, acoustic calibration, image export, text export, and report export. The automatic denoising threshold has been validated on synthetic signals, but when applied to real experimental data it should still be reviewed against the waveform, spectrum and spectrogram.
 
 \begin{itemize}
-  \item \textbf{1.6.1}: fixed the packaged build failing at startup---the single-file build lacked PySide6.QtOpenGL and QtOpenGLWidgets, so the interface module could not load (running from source was unaffected)---and the self-check now imports the interface module as well; when restarting for an interface-language switch the PyInstaller temporary-directory pointers are stripped, so exiting no longer reports ``Failed to remove temporary directory''; the AI assistant now receives answers as a stream, so a long report is no longer misjudged as a 120\,s timeout just because the server is slow to return the whole block, and the timeout message states how many characters had already arrived.
+  \item \textbf{2.0.0}: added FLAC and AIFF input and multi-channel selection; launch no longer opens a console window; selectable window function for spectrum and spectrogram; vector PDF / SVG figure export; crop bounds can be taken from the waveform selection; raw data export (spectrum / peaks / envelope CSV, spectrogram NPZ); batch comparison table, per-group statistics and comparison figure; a searchable manual inside the program; report language independent of the interface language; the denoising tool group (synchronous averaging, zero-phase notch and four adaptive cancellation methods, all guarded and with an uncertainty figure); and \texttt{.wavproj} project files that store the recipe rather than the samples.
+\item \textbf{1.6.1}: fixed the packaged build failing at startup---the single-file build lacked PySide6.QtOpenGL and QtOpenGLWidgets, so the interface module could not load (running from source was unaffected)---and the self-check now imports the interface module as well; when restarting for an interface-language switch the PyInstaller temporary-directory pointers are stripped, so exiting no longer reports ``Failed to remove temporary directory''; the AI assistant now receives answers as a stream, so a long report is no longer misjudged as a 120\,s timeout just because the server is slow to return the whole block, and the timeout message states how many characters had already arrived.
   \item \textbf{1.6}: the interface adds bilingual Chinese/English---a language can be chosen at the bottom of the left bar, defaulting to Chinese, and the program restarts automatically after switching to take effect; buttons, groups, tabs, hints and error messages are all in English, while exported text and report bodies remain Chinese (the fixed-width layout is tuned for Chinese column widths). The documentation is bilingualized in sync, with the README split into an English main document and a Chinese version, and the manual and interface text remove references to specific experiments.
   \item \textbf{1.4}: AI-assistant improvements---questions and answers use differently tinted bubbles and distinguish hints from errors, answers are rendered as Markdown (headings, lists, tables, code, links); the ``store the Key in the keychain?'' checkbox was removed in favor of always storing it in the Windows keychain, with a stated policy of never disclosing the Key; the default timeout became 120 s with separate hints for timeout, connection, and authentication failure; AI denoising confirmation was changed to ask only once and not to pop up for 0 segments.
   \item \textbf{1.5}: added acoustic calibration---compute the offset $K$ from sensitivity/preamplifier gain/full-scale voltage, or calibrate with a known SPL; statistics, CSV, TXT, HTML report and batch processing output dB SPL in sync; without calibration no SPL is output, avoiding baseless numbers.

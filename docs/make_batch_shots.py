@@ -22,7 +22,15 @@ sys.path.insert(0, str(ROOT))
 from PySide6.QtGui import QColor, QPalette  # noqa: E402
 from PySide6.QtWidgets import QApplication, QSplitter  # noqa: E402
 
-OUT = ROOT / "docs" / "figures"
+SHOT_LANG = (os.environ.get("SHOT_LANG") or "zh").strip().lower()
+_IS_EN = SHOT_LANG == "en"
+# 英文手册用 figures_en/，中文手册用 figures/，两边文件名保持一致
+OUT = ROOT / "docs" / ("figures_en" if _IS_EN else "figures")
+
+
+def msg(zh: str, en: str) -> str:
+    """配图里的示例文字（状态栏、档名、示例数值）跟界面语言走。"""
+    return en if _IS_EN else zh
 
 
 def light_palette() -> QPalette:
@@ -57,6 +65,11 @@ def main() -> None:
     app = QApplication.instance() or QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setPalette(light_palette())
+
+    from core.i18n import set_language
+
+    # 必须在 import app.* 之前：界面文案常量在 import 时求值
+    set_language(SHOT_LANG)
 
     from app.batch_dialog import BatchDialog
     from app.main_window import MainWindow

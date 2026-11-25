@@ -22,7 +22,14 @@ from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtGui import QColor, QPalette  # noqa: E402
 from PySide6.QtWidgets import QApplication, QDockWidget, QSplitter  # noqa: E402
 
-OUT = ROOT / "docs" / "figures"
+SHOT_LANG = (os.environ.get("SHOT_LANG") or "zh").strip().lower()
+_IS_EN = SHOT_LANG == "en"
+# 英文 README 用 figures_en/，中文 README 用 figures/
+OUT = ROOT / "docs" / ("figures_en" if _IS_EN else "figures")
+
+
+def msg(zh: str, en: str) -> str:
+    return en if _IS_EN else zh
 
 
 def light_palette() -> QPalette:
@@ -58,6 +65,11 @@ def main() -> None:
     app.setStyle("Fusion")
     app.setPalette(light_palette())
 
+    from core.i18n import set_language
+
+    # 必须在 import app.* 之前：界面文案常量在 import 时求值
+    set_language(SHOT_LANG)
+
     from app.main_window import MainWindow
 
     window = MainWindow()
@@ -85,7 +97,9 @@ def main() -> None:
         QApplication.processEvents()
 
     # 状态栏会打印源文件全路径，换成本机路径会泄露到公开仓库里
-    window.statusBar().showMessage("已载入 demo_tone.wav｜1.0 s / 48000 Hz｜主频 1000.00 Hz")
+    window.statusBar().showMessage(msg(
+        "已载入 demo_tone.wav｜1.0 s / 48000 Hz｜主频 1000.00 Hz",
+        "Loaded demo_tone.wav | 1.0 s / 48000 Hz | main frequency 1000.00 Hz"))
 
     window.tabs.setCurrentIndex(1)  # 傅立叶分析
     QApplication.processEvents()

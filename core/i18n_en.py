@@ -19,8 +19,8 @@ EN.update({
     "处理中": "Working",
     "文件与声道": "File & channel",
     "尚未载入文件": "No file loaded",
-    "请打开 WAV 文件；原始文件始终只读": "Open a WAV file; the original is always read-only",
-    "打开 WAV": "Open WAV",
+    "请打开音频文件；原始文件始终只读": "Open an audio file; the original is always read-only",
+    "打开音频": "Open audio",
     "自动估计": "Auto estimate",
     "当前声道": "Current channel",
     "已知激励频率": "Known excitation frequency",
@@ -33,8 +33,9 @@ EN.update({
         "Not calibrated: statistics show dBFS only. Set sensitivity or run a calibration "
         "and two SPL rows appear in the table.",
     "批量处理": "Batch processing",
-    "一次处理多个 WAV：先搭步骤脚本，再选文件，后台逐个执行。":
-        "Process many WAV files: build a step script, pick the files, run in the background.",
+    "一次处理多个音频文件：先搭步骤脚本，再选文件，后台逐个执行。":
+        "Process many audio files: build a step script, pick the files, "
+        "run in the background.",
     "批量处理…": "Batch processing…",
     "编辑处理步骤 → 选择待处理文件 → 开始处理": "Edit steps → select files → start",
     "播放与编辑": "Playback & editing",
@@ -49,6 +50,173 @@ EN.update({
     "坐标与分析": "Coordinates & analysis",
     "频率轴使用对数刻度": "Logarithmic frequency axis",
     "频谱幅值刻度": "Spectrum amplitude scale",
+    "分析窗函数": "Analysis window",
+    "报告语言": "Report language",
+    "跟随界面": "Follow interface",
+    "中文": "Chinese",
+    "影响导出的 TXT/HTML 报告与对比图文字；界面语言由上方语言按钮决定":
+        "Applies to exported TXT/HTML reports and comparison figures; the interface language follows the button above",
+    "汉宁窗 Hann": "Hann window",
+    "海明窗 Hamming": "Hamming window",
+    "布莱克曼窗 Blackman": "Blackman window",
+    "矩形窗 Rectangular": "Rectangular window",
+    "频谱与时频图使用同一个窗函数；换窗后自动重新分析":
+        "The spectrum and spectrogram share one window; changing it re-analyses automatically.",
+    # 工程文件（core/project.py、app/main_window.py）
+    "保存工程": "Save project",
+    "保存工程…": "Save project…",
+    "打开工程": "Open project",
+    "打开工程…": "Open project…",
+    "打开工程失败": "Could not open project",
+    "保存工程失败": "Could not save project",
+    "找不到源文件": "Source file not found",
+    "源文件对不上": "Source file does not match",
+    "部分操作没能重放": "Some steps could not be replayed",
+    "保存源文件与操作过程；载入后可接着做，不保存处理后的音频数据":
+        "Stores the source file and the recipe of edits; load it later to continue. Processed audio is not stored.",
+    "载入 .wavproj 工程文件，重放其中的操作过程":
+        "Load a .wavproj project and replay the edits it records",
+    "工程文件 (*.wavproj)": "Project files (*.wavproj)",
+    "工程已保存到 {_v0}": "Project saved to {_v0}",
+    "工程已载入：重放 {_v0} 步操作": "Project loaded: replayed {_v0} step(s)",
+    "工程里记录的音频文件不在了：请把它放回原位置，或先打开音频再载入工程。":
+        "The audio file recorded in the project is gone: put it back where it was, or open the audio first and then load the project.",
+    "源文件已经变了（哈希不符）：工程里记录的处理过程不再对应这份音频。请确认是否仍要载入。":
+        "The source file has changed (hash mismatch): the recorded edits no longer belong to this audio. Load anyway?",
+    "仍然载入这份工程？操作过程会在当前文件上重放。":
+        "Load this project anyway? Its edits will be replayed on the current file.",
+    "不认识的操作：{_v0}": "Unknown step: {_v0}",
+    "工程文件不是有效的 JSON：{_v0}": "The project file is not valid JSON: {_v0}",
+    "工程文件内容不是对象": "The project file does not contain an object",
+    "工程文件版本号不对：{_v0}": "Unexpected project version: {_v0}",
+    "工程文件由更新版本保存（v{_v0}），请先升级程序":
+        "The project was saved by a newer version (v{_v0}); upgrade the program first",
+    "工程文件里没有记录源文件": "The project does not record a source file",
+    "这不是本程序的工程文件（format={_v0}）": "This is not a project file of this program (format={_v0})",
+    "读不了工程文件：{_v0}": "Cannot read the project file: {_v0}",
+    "读不了源文件：{_v0}": "Cannot read the source file: {_v0}",
+    # 降噪工具组（core/anc.py、core/batch.py、app/anc_dialog.py）
+    "降噪工具组": "Denoising tools",
+    "降噪工具组…": "Denoising tools…",
+    "降噪工具组“{_v0}”未应用：{_v1}": 'Denoising tools “{_v0}” not applied: {_v1}',
+    "降噪工具组“{_v0}”：ERLE {_v1:.1f} dB，合成不确定度 {_v2:.2f} dB":
+        'Denoising tools “{_v0}”: ERLE {_v1:.1f} dB, combined uncertainty {_v2:.2f} dB',
+    "降噪工具组“{_v0}”需要第二个声道作参考，本文件只有 1 个声道，已跳过这一步":
+        'Denoising tools “{_v0}” needs a second channel as reference; this file has one channel, so the step was skipped',
+    "降噪没有应用": "Denoising not applied",
+    "降噪未应用：数据未改动": "Denoising not applied: the data is unchanged",
+    "已应用降噪（可撤销）；原始 WAV 未修改":
+        "Denoising applied (undoable); the original WAV is untouched",
+    "正在做降噪…": "Denoising…",
+    "按所选方法估计并抵消噪声": "Estimate the noise path with the selected method and cancel it",
+    "同步平均（触发对齐）": "Synchronous averaging (trigger aligned)",
+    "窄带陷波（零相位）": "Narrowband notch (zero phase)",
+    "冻结两段式正则化最小二乘": "Frozen two-pass regularised least squares",
+    "干净参考路 Wiener 抵消": "Wiener cancellation with a clean reference path",
+    "噪声段训练的分块自适应抵消": "Block adaptive cancellation trained on the noise segment",
+    "平稳噪声频域 Wiener 抵消": "Frequency-domain Wiener cancellation of stationary noise",
+    "同步平均、窄带陷波与四种自适应抵消；不满足护栏时只给诊断、不改数据":
+        "Synchronous averaging, narrowband notch and four adaptive cancellers; when a guard fails you get diagnostics only and the data stays unchanged",
+    "按选定的方法抑制噪声：需要假设的方法会在护栏不满足时拒绝应用并写明原因。":
+        "Suppress noise with the chosen method: assumption-based methods refuse to apply when a guard fails and say why.",
+    "{_v0}。适用：{_v1}。{_v2}": "{_v0}. Suits: {_v1}. {_v2}",
+    "需重复激励与稳定触发，无需参考通道":
+        "needs repeated excitation and a stable trigger; no reference channel",
+    "50/100 Hz 哼声、单频干扰": "50/100 Hz hum, single-tone interference",
+    "干扰必须是窄带：工频及其谐波":
+        "the interference must be narrowband: mains frequency and its harmonics",
+    "需噪声段；噪声缓变": "needs a noise segment; noise drifts slowly",
+    "噪声平稳，且参考路不含信号": "stationary noise and a reference path without the signal",
+    "需有噪声段；参考可含少量信号": "needs a noise segment; the reference may carry a little signal",
+    "参考麦独立拾取环境噪声": "the reference microphone picks up ambient noise independently",
+    "参考路不含信号": "the reference path carries no signal",
+    "长录音、风机转速变化": "long recordings, fan speed drift",
+    "长混响、平稳底噪": "long reverberation, steady noise floor",
+    "共振/拍频/衰减率等重复测量":
+        "repeated measurements such as resonance, beating or decay rate",
+    "默认：双声道、开头有静音": "default: stereo file with silence at the start",
+    "方法": "Method",
+    "方法：{_v0}": "Method: {_v0}",
+    "参数": "Parameters",
+    "分析并应用": "Analyse and apply",
+    "滤波器阶数": "Filter taps",
+    "分块长度": "Block length",
+    "谐波次数": "Harmonics",
+    "陷波中心": "Notch centre",
+    "陷波 Q 值": "Notch Q",
+    "噪声段": "Noise segment",
+    "噪声段起点": "Noise segment start",
+    "噪声段终点": "Noise segment end",
+    "自动检测（找开头最平稳的一段）":
+        "Detect automatically (find the steadiest stretch at the beginning)",
+    "s（起点与终点都留 0 表示自动检测）":
+        "s (leave both start and end at 0 to detect automatically)",
+    "越大越能拟合长混响；噪声段至少要有 8× 阶数个采样点":
+        "More taps fit longer reverberation; the noise segment needs at least 8× taps samples",
+    "越大越能拟合长混响，但需要更多噪声采样点（≥ 8× 阶数）":
+        "More taps fit longer reverberation but need more noise samples (≥ 8× taps)",
+    "只对「分块自适应」有用：每块的统计量按遗忘因子并入总估计":
+        "Only used by block adaptive cancellation: each block's statistics are merged into the total estimate with a forgetting factor",
+    "Q 越大陷波越窄；Q=30 时 50 Hz 陷波对 55 Hz 影响约 0.1 dB":
+        "A larger Q gives a narrower notch; at Q=30 a 50 Hz notch perturbs 55 Hz by about 0.1 dB",
+    "参考通道取另一个声道；目标通道是当前选中的声道。":
+        "The other channel serves as the reference; the selected channel is the target.",
+    "不需要参考通道，只处理当前选中的声道。":
+        "No reference channel needed; only the selected channel is processed.",
+    "这个方法需要参考通道：请加载双声道文件，或选择第二个文件作为参考。":
+        "This method needs a reference channel: load a stereo file, or pick a second file as the reference.",
+    "这个方法需要参考通道：当前文件只有 1 个声道，应用会被拒绝。":
+        "This method needs a reference channel: the file has only one channel, so applying it will be refused.",
+    "护栏：留出段 ERLE ≥ {_v0:g} dB；泄漏相干 ≤ {_v1:g}；参考与目标相干 ≤ {_v2:g}；噪声段 ≥ {_v3}× 阶数；同步平均至少 {_v4} 次；陷波对主频影响 ≤ {_v5:g} dB。":
+        "Guards: holdout ERLE ≥ {_v0:g} dB; leakage coherence ≤ {_v1:g}; reference/target coherence ≤ {_v2:g}; noise segment ≥ {_v3}× taps; synchronous averaging at least {_v4} repeats; notch effect on the main frequency ≤ {_v5:g} dB.",
+    "全段 ERLE：{_v0:.1f} dB": "ERLE over the whole file: {_v0:.1f} dB",
+    "留出段 ERLE：{_v0:.1f} dB": "Holdout ERLE: {_v0:.1f} dB",
+    "主频幅值变化：{_v0:+.2f} dB": "Main frequency amplitude change: {_v0:+.2f} dB",
+    "合成不确定度：{_v0:.2f} dB": "Combined uncertainty: {_v0:.2f} dB",
+    "噪声段：{_v0:.3f}–{_v1:.3f} s": "Noise segment: {_v0:.3f}–{_v1:.3f} s",
+    "未应用：{_v0}": "Not applied: {_v0}",
+    "未知原因": "unknown reason",
+    "未知的降噪方法：{_v0}": "Unknown denoising method: {_v0}",
+    "信号太短（{_v0} 个采样点），无法做降噪。":
+        "Signal too short ({_v0} samples) for denoising.",
+    "信号全为零，没有可处理的内容。": "The signal is all zeros; nothing to process.",
+    "信号里有非有限值（NaN/Inf），请先检查输入文件。":
+        "The signal contains non-finite values (NaN/Inf); check the input file.",
+    "参考通道全为零，无法估计噪声路径。":
+        "The reference channel is all zeros; the noise path cannot be estimated.",
+    "参考通道有 {_v0} 个采样点，目标通道有 {_v1} 个：长度必须一致。":
+        "Reference has {_v0} samples and target has {_v1}: lengths must match.",
+    "信号太短，无法估计互谱。": "Signal too short to estimate the cross spectrum.",
+    "信号太短，无法做零相位滤波。": "Signal too short for zero-phase filtering.",
+    "没有找到平稳噪声段：请先在波形上框选一段只有噪声的区间。":
+        "No stationary noise segment found: select a noise-only stretch on the waveform first.",
+    "噪声段只有 {_v0} 个采样点，少于 {_v1} 阶 × {_v2} 的下限 {_v3}。":
+        "The noise segment has only {_v0} samples, below the {_v3} required for {_v1} taps × {_v2}.",
+    "噪声段只有 {_v0} 个采样点，至少要 {_v1} 个（2×阶数）才能分训练/留出两半。":
+        "The noise segment has only {_v0} samples; at least {_v1} (2× taps) are needed to split training and holdout halves.",
+    "留出段 ERLE 只有 {_v0:.1f} dB（要求 ≥ {_v1:.0f} dB）：参考路对噪声几乎没有预测力。":
+        "Holdout ERLE is only {_v0:.1f} dB (requires ≥ {_v1:.0f} dB): the reference barely predicts the noise.",
+    "参考与目标在主频处相干 γ² = {_v0:.3f}（上限 {_v1:.2f}）：两支通道听到同一个信号，抵消会把信号一起减掉。":
+        "Reference and target are coherent at the main frequency γ² = {_v0:.3f} (limit {_v1:.2f}): both channels hear the same signal, so cancellation would remove the signal too.",
+    "参考路在主频处相干 γ² = {_v0:.2f}（> 0.5）：参考路显然含信号，请改用「冻结两段式」。":
+        "Reference path coherence at the main frequency γ² = {_v0:.2f} (> 0.5): the reference clearly carries the signal; use the frozen two-pass method instead.",
+    "估计信号泄漏 γ̂²_s = {_v0:.3f}（上限 {_v1:.3f}）：降噪会损伤主频幅值。":
+        "Estimated signal leakage γ̂²_s = {_v0:.3f} (limit {_v1:.3f}): denoising would bias the main frequency amplitude.",
+    "触发抖动导致幅值损失 {_v0:.2f} dB，超过 {_v1:.1f} dB。":
+        "Trigger jitter costs {_v0:.2f} dB of amplitude, above {_v1:.1f} dB.",
+    "触发抖动 σ_t = {_v0:.1f} µs，按公式 ΔL_TSA = {_v1:.2f} dB；实测幅值损失 {_v2:.2f} dB。":
+        "Trigger jitter σ_t = {_v0:.1f} µs gives ΔL_TSA = {_v1:.2f} dB by formula; measured amplitude loss {_v2:.2f} dB.",
+    "只检测到 {_v0} 次重复（至少需要 {_v1} 次）。": "Only {_v0} repetitions detected ({_v1} required).",
+    "检测到的重复次数不足（{_v0} 次），无法做同步平均。":
+        "Too few repetitions detected ({_v0}); synchronous averaging is not possible.",
+    "可用完整周期只有 {_v0} 个（至少 {_v1} 个）。":
+        "Only {_v0} complete periods available ({_v1} required).",
+    "陷波对主频的影响 {_v0:.2f} dB，超过 {_v1:.1f} dB：换更小的 Q 值或改中心频率。":
+        "The notch perturbs the main frequency by {_v0:.2f} dB, above {_v1:.1f} dB: use a smaller Q or move the centre frequency.",
+    "按解析式，{_v0:g} Hz 处陷波增益 {_v1:.4f} dB。":
+        "By the closed form the notch gain at {_v0:g} Hz is {_v1:.4f} dB.",
+    "频域 Wiener 是零相位实现，不引入时延，但会改变瞬态包络形状。":
+        "The frequency-domain Wiener filter is a zero-phase implementation: it adds no delay but reshapes transient envelopes.",
     "指定时间读数": "Read at time",
     "计算选区统计": "Compute selection statistics",
     "双通道时延与电平分析": "Two-channel delay & level analysis",
@@ -114,6 +282,9 @@ EN.update({
         "use “Undo last edit” to restore.",
     "处理失败": "Processing failed",
     "处理结果失败": "Result processing failed",
+    "音频文件 (*.wav *.flac *.aiff *.aif)":
+        "Audio files (*.wav *.flac *.aiff *.aif)",
+    # 导出仍是 WAV，保存对话框用这条；与打开对话框的多格式过滤不是同一条。
     "WAV 音频 (*.wav)": "WAV audio (*.wav)",
     "当前声道 {_v0:,} 点，长音频会先抽稀再绘制":
         "Current channel has {_v0:,} samples; long recordings are decimated before drawing",
@@ -144,6 +315,45 @@ EN.update({
     "批量处理结束": "Batch finished",
     "批量处理已取消": "Batch cancelled",
     "批量处理完成": "Batch complete",
+    "正在搜索…": "Searching…",
+    "上一处": "Previous",
+    "下一处": "Next",
+    "使用手册": "User Manual",
+    "使用手册 — {_v0}": "User Manual — {_v0}",
+    "使用手册…": "User Manual…",
+    "共 {_v0} 处": "{_v0} matches",
+    "在软件内打开手册，可搜索关键词": "Open the manual inside the app; keywords can be searched",
+    "帮助": "Help",
+    "手册打不开：{_v0}": "Cannot open the manual: {_v0}",
+    "打开手册目录": "Open manual folder",
+    "搜索": "Search",
+    "没有匹配": "No matches",
+    "没有找到手册 PDF（{_v0}）。": "No manual PDF found in {_v0}.",
+    "第 {_v0} / {_v1} 处": "Match {_v0} of {_v1}",
+    "第 {_v0} / {_v1} 页": "Page {_v0} of {_v1}",
+    "缩放": "Zoom",
+    "自定义": "Custom",
+    "输入关键词，回车跳到第一个匹配": "Type a keyword and press Enter to jump to the first match",
+    "适应宽度": "Fit width",
+    "适应页面": "Fit page",
+    "关闭": "Close",
+    "分组统计": "Group statistics",
+    "失败": "failed",
+    "成功": "ok",
+    "对比图指标": "Metric for the comparison chart",
+    "对比表（{_v0} 个文件）": "Comparison table ({_v0} files)",
+    "导出分组统计": "Export group statistics",
+    "导出分组统计 CSV": "Export group statistics CSV",
+    "导出对比图": "Export comparison chart",
+    "导出对比图 PNG": "Export comparison chart PNG",
+    "导出对比表": "Export comparison table",
+    "导出对比表 CSV": "Export comparison table CSV",
+    "批量对比：{_v0}": "Batch comparison: {_v0}",
+    "批量结果汇总": "Batch result summary",
+    "文件序号": "File index",
+    "未知错误": "unknown error",
+    "查看汇总": "View summary",
+    "还没有批量结果": "No batch result yet",
     "AI 请求的去噪预览没有检测到需要修复的区段（0 段），已自动跳过确认，数据未改动。":
         "The repair preview requested by the AI found nothing to fix (0 segments), "
         "so the confirmation was skipped and no data changed.",
@@ -275,6 +485,14 @@ EN.update({
     "检测超出稳健阈值的短脉冲并三次样条修补；无法修补的超长区间标记为无效点。":
         "Find short spikes above a robust threshold and repair them with cubic splines; "
         "segments too long to repair are marked invalid.",
+    "取当前选区": "Use current selection",
+    "把主窗口波形上框选的起止时刻填进上面两个框": "Fill the two boxes above with the start and end times selected on the waveform",
+    "先打开音频并在波形上框选一段，再回填": "Open audio and select a range on the waveform first",
+    "裁切参数不对": "Trim settings need fixing",
+    "第 {_v0} 步“裁剪到区间”的起点不能为负": "Step {_v0} (trim to range): the start time cannot be negative",
+    "第 {_v0} 步“裁剪到区间”的起点必须小于终点（终点留 0 表示到文件末尾）": "Step {_v0} (trim to range): the start time must be before the end time (leave 0 to keep until the end of the file)",
+    "裁切区间超出文件长度，已钳制到 {_v0:.3f}–{_v1:.3f} s（文件 {_v2:.3f} s）": "Trim range exceeds the file length; clamped to {_v0:.3f}-{_v1:.3f} s (file is {_v2:.3f} s)",
+    "警告：裁切区间 {_v0:.3f}–{_v1:.3f} s 太短，已跳过这一步": "Warning: trim range {_v0:.3f}-{_v1:.3f} s is too short; this step was skipped",
     "裁剪到区间": "Crop to interval",
     "只保留指定时间区间，其后的步骤都基于裁剪后的数据。":
         "Keep only the given interval; every later step works on the cropped data.",
@@ -426,7 +644,7 @@ EN.update({
     "清空": "Clear",
     "留空 = 与源文件同目录": "Blank = alongside the source files",
     "浏览…": "Browse…",
-    "选择待处理的 WAV（可多选）": "Select WAV files (multiple allowed)",
+    "选择待处理的音频（可多选）": "Select audio files (multiple allowed)",
     "选择输出目录": "Select output directory",
     "保存脚本": "Save script",
     "载入脚本": "Load script",
@@ -486,6 +704,173 @@ EN.update({
 EN.update({
     "AI 模型设置": "AI model settings",
     "自定义（自填 Base URL 与模型名）": "Custom (enter Base URL and model name)",
+    "页码": "Page",
+    "手册所在位置": "Manual location",
+    "手册 PDF 就存放在这个目录：\n{_v0}": "The manual PDFs are stored in this folder:\n{_v0}",
+    "系统的文件管理器打不开（explorer.exe 启动失败），这里直接给出路径，"
+    "可以复制后粘到保存对话框或资源管理器地址栏。":
+        "The system file manager does not start on this machine (explorer.exe fails), "
+        "so the path is shown here instead — copy it into the save dialog or an address bar.",
+    "复制路径": "Copy path",
+    "设置没有存住": "Settings were not saved",
+    "正在测试…": "Testing…",
+    "正在载入界面…": "Loading the interface…",
+    "参考来源": "Reference source",
+    # ---- 独立噪声画像（noise_profile，方案 B）
+    "独立噪声画像（谱减）": "Independent noise profile (spectral subtraction)",
+    "参考 {_v0}；第 {_v1} 声道；独立噪声画像不做逐点对齐。":
+        "Reference {_v0}, channel {_v1}; the noise profile needs no sample alignment.",
+    "参考是单独录的一段平稳噪声，不要求与目标对齐":
+        "The reference is a separately recorded stretch of stationary noise; "
+        "it need not be aligned with the target",
+    "两次录音、不同采样时钟、参考比目标长/短":
+        "Two recordings, different clocks, reference longer or shorter than the target",
+    "独立噪声画像：静态噪声谱 + 决策定向增益，不要求参考与目标对齐。":
+        "Independent noise profile: static noise spectrum plus decision-directed gain; "
+        "the reference need not be aligned with the target.",
+    "信号太短，无法做噪声画像降噪。":
+        "The signal is too short for noise-profile denoising.",
+    "信号或参考里有非有限值（NaN/Inf）。":
+        "The signal or the reference contains non-finite values (NaN/Inf).",
+    "参考音频全为零（静音），无法估计噪声谱。":
+        "The reference audio is silent (all zeros); the noise spectrum cannot be estimated.",
+    "参考太短（{_v0} 点），至少需要 {_v1:.1f} s 才能估计噪声谱。":
+        "The reference is too short ({_v0} samples); at least {_v1:.1f} s is needed "
+        "to estimate the noise spectrum.",
+    "参考噪声不平稳：前/后半段功率谱最大相差 {_v0:.1f} dB（上限 {_v1:.1f} dB）。"
+    "请换一段更平稳的噪声，或用需要参考通道的方法。":
+        "The reference noise is not stationary: the first and second halves differ by "
+        "{_v0:.1f} dB (limit {_v1:.1f} dB). Use a more stationary noise segment, or a "
+        "method that needs a reference channel.",
+    "参考里含有与目标主频相同的强音，会把信号当成噪声减掉。"
+    "请换一段不含信号的纯噪声参考。":
+        "The reference contains a strong tone at the target's fundamental frequency, so the "
+        "signal would be subtracted as noise. Use a noise-only reference.",
+    "主频处噪声占比 {_v0:.0%} 过高（上限 {_v1:.0%}）：降噪会明显损伤信号。":
+        "Noise accounts for {_v0:.0%} of the power at the fundamental (limit {_v1:.0%}): "
+        "denoising would visibly damage the signal.",
+    "主频幅值变化 {_v0:+.2f} dB，超过 {_v1:.1f} dB：噪声画像会损伤信号。":
+        "The fundamental amplitude changes by {_v0:+.2f} dB, beyond {_v1:.1f} dB: "
+        "the noise profile would damage the signal.",
+    "噪声画像对主频的影响 {_v0:.2f} dB，超过 {_v1:.1f} dB。":
+        "The noise profile changes the fundamental by {_v0:.2f} dB, beyond {_v1:.1f} dB.",
+    "用外部参考的整段噪声谱，不要求与目标对齐（可以是另一次录音）。":
+        "Uses the whole external reference as the noise spectrum; no alignment with the "
+        "target is required (it may be a separate recording).",
+    "这个方法需要一段噪声参考：请加载外部参考文件，或使用双声道文件的另一路。":
+        "This method needs a noise reference: load an external reference file, or use the "
+        "other track of a stereo file.",
+    "这个方法需要参考：请在下方选择内置声道或外部文件。":
+        "This method needs a reference: choose the built-in channel or an external file below.",
+    "外部参考": "External reference",
+    "不使用（用各文件的第 2 声道）": "None (use each file's channel 2)",
+    "清除": "Clear",
+    "选择参考 WAV…": "Choose a reference WAV…",
+    "{_v0}（第 {_v1} 声道）": "{_v0} (channel {_v1})",
+    "多声道参考文件里用哪一路；声道号会随脚本一起保存":
+        "Which track to use in a multichannel reference; the index is saved with the script",
+    "外部参考 {_v0} 第 {_v1} 声道": "External reference {_v0} channel {_v1}",
+    "外部参考不可用（{_v0}），本文件已跳过这一步":
+        "The external reference is not usable ({_v0}); this step was skipped for this file",
+    "外部参考比本文件短：只处理重叠的 {_v0:,} 点，其余保持原样":
+        "The external reference is shorter than this file; only the overlapping "
+        "{_v0:,} samples were processed, the rest were left unchanged",
+    "参考：{_v0}": "Reference: {_v0}",
+    "本批使用外部参考：{_v0}（第 {_v1} 声道）":
+        "This batch used an external reference: {_v0} (channel {_v1})",
+    "参考：内置声道 / 未设置外部参考": "Reference: built-in channel / no external reference",
+    "参考：{_v0}（第 {_v1} 声道）": "Reference: {_v0} (channel {_v1})",
+    "参考已失效：{_v0}": "The reference is no longer valid: {_v0}",
+    "参考文件找不到": "Reference file not found",
+    "工程里记录的参考文件不在了：{_v0}":
+        "The reference file recorded in the project is gone: {_v0}",
+    "参考文件已改变": "Reference file changed",
+    "脚本里记录的参考文件不在了：{_v0}\n已清除该参考，步骤仍会载入。":
+        "The reference file recorded in the script is gone: {_v0}\n"
+        "The reference was cleared; the steps are still loaded.",
+    "参考文件与保存脚本时不一致：{_v0}\n已清除该参考，步骤仍会载入。":
+        "The reference file differs from when the script was saved: {_v0}\n"
+        "The reference was cleared; the steps are still loaded.",
+    "参考文件与保存工程时不一致：{_v0}\n为避免用错数据，已清空参考。":
+        "The reference file differs from when the project was saved: {_v0}\n"
+        "The reference has been cleared to avoid using the wrong data.",
+    "参考文件已被替换或修改，已清空：{_v0}":
+        "The reference file was replaced or modified and has been cleared: {_v0}",
+    "正在校验参考文件…": "Validating the reference file…",
+    "参考文件的哈希与保存工程时不同：{_v0}\n为避免用错数据，已清空参考。":
+        "The reference file hash differs from when the project was saved: {_v0}\n"
+        "The reference has been cleared to avoid using the wrong data.",
+    "内置声道（双声道文件的另一路）": "Built-in channel (the other track of a stereo file)",
+    "外部文件…": "External file…",
+    "不使用参考": "No reference",
+    "不使用参考：需要参考通道的方法会被拒绝。":
+        "No reference: methods that require one will be refused.",
+    "来源": "Source",
+    "文件": "File",
+    "选择…": "Browse…",
+    "声道": "Channel",
+    "多声道参考文件里用哪一路；声道号会随工程与批量记录一起保存":
+        "Which track to use in a multichannel reference; the index is saved with the project "
+        "and batch records",
+    "内置声道": "Built-in channel",
+    "取双声道文件的另一路；无需外部文件。":
+        "Uses the other track of the stereo file; no external file needed.",
+    "当前文件只有 1 个声道，不能作为内置参考。":
+        "The current file has only one channel and cannot serve as a built-in reference.",
+    "未选择": "Not selected",
+    "请选择与目标同时录制、同采样率的参考文件。":
+        "Choose a reference file recorded simultaneously with the target, with the same sample rate.",
+    "载入音频后才能校验参考文件。": "Load audio first to validate the reference file.",
+    "选择参考 WAV": "Choose a reference WAV",
+    "不可用：{_v0}": "Not usable: {_v0}",
+    "可用：{_v0} 个声道、{_v1} Hz、{_v2:,} 点；与目标不等长时只处理重叠段。":
+        "Usable: {_v0} channels, {_v1} Hz, {_v2:,} samples; when the length differs from the "
+        "target, only the overlapping span is processed.",
+    "参考文件不存在：{_v0}": "The reference file does not exist: {_v0}",
+    "参考文件读不出来：{_v0}": "The reference file could not be read: {_v0}",
+    "参考文件必须是单声道，当前有 {_v0} 个声道。":
+        "The reference file must be mono; it has {_v0} channels.",
+    "参考文件采样率是 {_v0} Hz，目标是 {_v1} Hz；v1 不做自动重采样，请提供同采样率的文件。":
+        "The reference is {_v0} Hz but the target is {_v1} Hz; v1 does not resample — "
+        "please supply a file with the same sample rate.",
+    "参考文件有 {_v0} 个采样点，目标是 {_v1} 个；必须精确等长（不做补零或裁剪）。":
+        "The reference has {_v0} samples but the target has {_v1}; they must match exactly "
+        "(no padding or trimming).",
+    "参考文件里有非有限值（NaN/Inf）。": "The reference file contains non-finite values (NaN/Inf).",
+    "参考音频全为零（静音），无法作为参考。":
+        "The reference audio is silent (all zeros) and cannot be used as a reference.",
+    "参考文件有 {_v0} 个声道，选不了第 {_v1} 路（从 1 数）。":
+        "The reference has {_v0} channels; channel {_v1} (1-based) is not available.",
+    "参考文件太短（{_v0} 点），至少需要 256 点。":
+        "The reference is too short ({_v0} samples); at least 256 are required.",
+    "参考与目标只重叠 {_v0} 点，少于要求的 {_v1} 点（至少占目标的 {_v2:.0%}）。":
+        "The reference overlaps the target by only {_v0} samples, below the required {_v1} "
+        "(at least {_v2:.0%} of the target).",
+    "参考与目标的起点相差约 {_v0} 个采样点（超过 {_v1} ms）："
+    "这两段可能不是同一次录音。请换用独立噪声画像，它不要求样本对齐。":
+        "The reference and the target differ by about {_v0} samples in onset "
+        "(more than {_v1} ms): they are probably not the same recording. "
+        "Use the independent noise-profile method instead, which needs no sample alignment.",
+    "参考 {_v0}": "Reference {_v0}",
+    "第 {_v0} 声道": "channel {_v0}",
+    "起点差 {_v0} 点": "onset difference {_v0} samples",
+    "未覆盖的 {_v0:,} 点保持原样": "{_v0:,} samples without a reference were left unchanged",
+    "正在读取音频…": "Reading the audio…",
+    "{_v0}；长文件读取可能需要数秒": "{_v0}; a long recording may take a few seconds to read",
+    "正在计算频谱与时频…": "Computing the spectrum and spectrogram…",
+    "已载入 {_v0}｜{_v1:.1f} s / {_v2} Hz；正在计算频谱与时频…":
+        "Loaded {_v0} | {_v1:.1f} s / {_v2} Hz; computing the spectrum and spectrogram…",
+    "谱峰数量": "Peak count",
+    "只影响谱峰表、TXT/CSV 与频谱图的峰标注；不改 FFT、主频与 THD":
+        "Affects only the peak table, the TXT/CSV peak list and the spectrum figure annotations; "
+        "the FFT, main frequency and THD are unchanged",
+    "已切换声道，上一声道的预览已丢弃":
+        "Channel switched — the preview from the previous channel was discarded",
+    "{_v0} 没能写入设置文件：{_v1}\n\n请把程序放到可写目录后再保存。":
+        "{_v0} could not be written to the settings file: {_v1}\n\n"
+        "Move the program to a writable folder and save again.",
+    "手册目录不存在：{_v0}": "The manual folder does not exist: {_v0}",
+    "打不开手册目录：{_v0}": "Could not open the manual folder: {_v0}",
     "在 platform.deepseek.com 的 API keys 页面创建，形如 sk-…":
         "Create one on the API keys page of platform.deepseek.com, looks like sk-…",
     "在 platform.moonshot.cn 的 API Key 管理页创建，形如 sk-…":
@@ -538,6 +923,7 @@ EN.update({
         "the model name exist.",
     "其余设置已保存。": "The other settings were saved.",
     "DeepSeek（深度求索）": "DeepSeek",
+    "Moonshot（月之暗面 Kimi）": "Moonshot (Kimi)",
 })
 
 # ---------------------------------------------------------------- AI 会话气泡
@@ -565,13 +951,36 @@ EN.update({
     "白色（论文/报告）": "White (paper/report)",
     "深色（投影/屏幕）": "Dark (projector/screen)",
     "透明（叠放到其它版面）": "Transparent (for compositing)",
+    "导出图像（PNG / PDF / SVG）": "Export image (PNG / PDF / SVG)",
+    "导出图像（PNG / PDF / SVG）…": "Export image (PNG / PDF / SVG)…",
+    "导出图按下方尺寸与背景重新渲染，不是界面截图："
+    "长音频会按 min/max 抽稀到 ≤20 万点绘制，峰谷形态与读数不受影响。"
+    "PDF / SVG 是矢量图，缩放不失真，适合直接放进论文。":
+        "The figure is re-rendered at the size and background below — not a screenshot. Long "
+        "audio is drawn with min/max decimation down to ≤200k points; peaks and readouts "
+        "are unaffected. PDF / SVG are vector formats: they stay sharp at any zoom and drop "
+        "straight into a paper.",
+    "格式": "Format",
+    "PNG 位图 (*.png)": "PNG bitmap (*.png)",
+    "PDF 矢量 (*.pdf)": "PDF vector (*.pdf)",
+    "SVG 矢量 (*.svg)": "SVG vector (*.svg)",
+    "保存图像": "Save image",
+    "矢量图文字转为路径（不依赖本机字体）": "Convert vector text to paths (no fonts needed)",
+    "勾选后 PDF/SVG 里的文字会转成曲线，任何机器打开都不丢字，但不能再编辑文字。":
+        "When checked, text in PDF/SVG becomes curves: it opens correctly on any machine but "
+        "can no longer be edited as text.",
+    "；矢量格式按物理尺寸输出，没有像素尺寸":
+        "; vector output uses physical size, so there is no pixel size",
+    "；矢量格式的物理尺寸 = 像素 ÷ dpi":
+        "; for vector output the physical size = pixels ÷ dpi",
+    "请先选择图像保存位置。": "Choose where to save the image first.",
+    "只支持 PNG（.png）、PDF（.pdf）、SVG（.svg）。":
+        "Only PNG (.png), PDF (.pdf) and SVG (.svg) are supported.",
+    "正在导出波形图…": "Exporting waveform…",
+    "正在导出频谱图…": "Exporting spectrum…",
+    "正在导出时频图…": "Exporting spectrogram…",
     "图像": "Figure",
     "{stem}_声道{_v1}": "{stem}_ch{_v1}",
-    "导出的 PNG 按下方尺寸与背景重新渲染，不是界面截图："
-    "长音频会按 min/max 抽稀到 ≤20 万点绘制，峰谷形态与读数不受影响。":
-        "The PNG is re-rendered at the size and background below — not a screenshot. Long "
-        "audio is drawn with min/max decimation down to ≤200k points; peaks and readouts "
-        "are unaffected.",
     "显示网格": "Show grid",
     "论文版式默认不画标题，图题写在 caption 里":
         "Paper layouts omit the title by default — put it in the caption",
@@ -615,15 +1024,11 @@ EN.update({
         "Physical size {_v0:g} × {_v1:g} in at {PAPER_DPI} dpi → {_v3} × {_v4} px; "
         "inward ticks, all four spines, white background",
     "屏幕版式：自定义像素": "Screen layout: custom pixels",
-    "保存 PNG": "Save PNG",
-    "PNG 图像 (*.png)": "PNG image (*.png)",
     "图像设置": "Image settings",
     "屏幕版式：按像素出图，可选深色或透明背景":
         "Screen layout: pixel-sized output, dark or transparent background available",
     "缺少保存路径": "No save path",
-    "请先选择 PNG 文件保存位置。": "Choose where to save the PNG first.",
     "格式不支持": "Unsupported format",
-    "本功能只导出 PNG（.png）。": "This only exports PNG (.png).",
     "目录不可用": "Directory unavailable",
     "无法创建目录：{exc}": "Cannot create directory: {exc}",
     "（当前无数据）": " (no data)",
@@ -795,7 +1200,7 @@ EN.update({
     "未知包络方法：{method}": "Unknown envelope method: {method}",
     "不支持的包络模型：{model}": "Unsupported envelope model: {model}",
     "指数包络拟合失败：{exc}": "Exponential envelope fit failed: {exc}",
-    "WAV 文件不存在：{source}": "WAV file does not exist: {source}",
+    "音频文件不存在：{source}": "Audio file does not exist: {source}",
     "没有可写入的音频数据": "No audio data to write",
     "音频中含 NaN 或无穷值，无法导出": "Audio contains NaN or infinity, cannot export",
     "音频数据必须是非空的 [采样点, 声道] 数组":
@@ -856,7 +1261,7 @@ EN.update({
 
 # ---------------------------------------------------------------- 主窗口：操作反馈
 EN.update({
-    "正在读取并分析 WAV…": "Reading and analysing the WAV…",
+    "正在读取并分析音频…": "Reading and analysing the audio…",
     "已载入 {_v0}｜{_v1:.1f} s / {_v2} Hz；主频与 THD 基于受限窗口"
     "（详见傅立叶分析页），统计量使用完整选区。":
         "Loaded {_v0} | {_v1:.1f} s / {_v2} Hz; fundamental and THD use a limited window "
@@ -931,7 +1336,7 @@ EN.update({
     "当前处理版本与原始数据一致，无需写回。":
         "The working copy is identical to the original; nothing to write back.",
     "请先打开文件": "Open a file first",
-    "请先打开一个 WAV 文件。": "Open a WAV file first.",
+    "请先打开一个音频文件。": "Open an audio file first.",
     "尚未载入音频": "No audio loaded",
     "正在做双通道时延分析…": "Running two-channel delay analysis…",
     "双通道分析": "Two-channel analysis",
@@ -942,12 +1347,8 @@ EN.update({
     "正在导出 WAV…": "Exporting WAV…",
     "正在生成 HTML 报告…": "Generating HTML report…",
     "正在导出分析 TXT…": "Exporting analysis TXT…",
-    "正在导出波形图 PNG…": "Exporting waveform PNG…",
-    "正在导出频谱图 PNG…": "Exporting spectrum PNG…",
-    "正在导出时频图 PNG…": "Exporting spectrogram PNG…",
     "重算 dB 色标范围": "Recompute dB colour range",
     "导出分析 TXT…": "Export analysis TXT…",
-    "导出图像 PNG…": "Export image PNG…",
     "导出当前统计 CSV": "Export statistics CSV",
     "生成独立 HTML 报告": "Generate standalone HTML report",
     "HTML 报告 (*.html)": "HTML report (*.html)",
@@ -962,6 +1363,32 @@ EN.update({
     "{_v0} 个章节，坐标步长 {_v1} 点": "{_v0} sections, coordinate stride {_v1}",
     "已生成 {path}": "Generated {path}",
     "已生成 {result}": "Generated {result}",
+    "导出原始数据": "Export raw data",
+    "导出原始数据…": "Export raw data…",
+    "主要峰值与基频整数倍谐波，harmonic 列标注阶次":
+        "Main peaks and harmonics at integer multiples of the fundamental; the harmonic column gives the order",
+    "以下文件是分析结果的原始数据，列名为英文，文件头 # 注释记录了窗函数与 FFT 规模。":
+        "These files hold the raw data behind the analysis. Columns use English names, and the leading # comments record the window and FFT size.",
+    "包络 CSV": "Envelope CSV",
+    "包络与时间轴长度不一致：{_v0} vs {_v1}": "Envelope and time axis differ in length: {_v0} vs {_v1}",
+    "将写出 {_v0} 个文件": "Will write {_v0} file(s)",
+    "峰值与谐波": "Peaks and harmonics",
+    "峰值与谐波 CSV": "Peaks and harmonics CSV",
+    "已导出 {_v0} 个文件到 {folder}": "Exported {_v0} file(s) to {folder}",
+    "当前还没有这项结果，先做对应分析": "This result is not available yet; run the matching analysis first",
+    "拟合曲线长度不一致：{_v0} vs {_v1}": "Fitted curve differs in length: {_v0} vs {_v1}",
+    "时间、包络值、拟合曲线（未拟合时留空）": "Time, envelope, fitted curve (blank when no fit)",
+    "时频": "Spectrogram",
+    "时频矩阵 NPZ": "Spectrogram matrix NPZ",
+    "时频矩阵形状应为 ({_v0}, {_v1})，实际为 {_v2}": "Spectrogram matrix should be ({_v0}, {_v1}), got {_v2}",
+    "未勾选任何文件": "No file selected",
+    "每个 FFT 频点一行：频率、幅值、dBFS、相位": "One row per FFT bin: frequency, amplitude, dBFS, phase",
+    "没有可导出的数据": "Nothing to export",
+    "请先完成频谱分析或包络拟合，再导出原始数据。": "Run a spectrum analysis or envelope fit before exporting raw data.",
+    "请先选择输出目录": "Choose an output folder first",
+    "输出目录不存在": "The output folder does not exist",
+    "频率×时间的 dBFS 矩阵，含跳帧数 skipped": "Frequency × time dBFS matrix, with the skipped frame count",
+    "频谱 CSV": "Spectrum CSV",
     "导出失败": "Export failed",
     "报告生成失败": "Report generation failed",
     "未命名.wav": "untitled.wav",

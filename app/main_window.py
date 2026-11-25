@@ -11,31 +11,49 @@ from typing import Any
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import QProcess, QRectF, QSettings, Qt, QTimer
+from PySide6.QtCore import QObject, QProcess, QRectF, QSettings, Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDialog, QDockWidget, QDoubleSpinBox,
     QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit,
-    QMainWindow, QMessageBox, QPushButton, QScrollArea, QSplitter, QTabWidget,
+    QMainWindow, QMessageBox, QPushButton, QScrollArea, QSpinBox, QSplitter, QTabWidget,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from ai.assistant import AIAssistant, AIOutcome
 from ai.client import OpenAICompatibleClient
 from ai.tools import AnalysisTools
+from core.anc import METHOD_LABELS, Diagnostics as AncDiagnostics
+from core.anc import run_method as run_anc_method
 from core.audio_io import AudioData, read_wav, write_wav
 from core.calibration import (
     MODE_PARAMS, Calibration, dumps_profiles, find_profile, loads_profiles,
 )
 from core.denoise import DenoiseResult, detect_and_repair_impulses
 from core.dual_channel import analyze_dual_channel
+from core.batch_summary import build_summary
+from core.data_export import (
+    export_envelope_csv, export_peaks_csv, export_spectrogram_npz, export_spectrum_csv,
+    skipped_frames,
+)
 from core.editor import apply_to_source, trim_range
-from core.envelope import compute_envelope, fit_envelope
+from core.envelope import compute_envelope, evaluate_fit, fit_envelope
 from core.display import min_max_downsample as _downsample_series
 from core.exporter import build_report_html, export_rows_csv, save_report
 from core.figure_export import (
     KIND_LABELS, FigureOptions, render_spectrogram_png, render_spectrum_png, render_waveform_png,
 )
-from core.spectral import fourier_analysis, stft_spectrogram
+from core.launcher import pythonw_sibling
+from core.project import (
+    build_project, load_project, save_project, source_path_of, verify_source,
+)
+from core.report_i18n import (
+    REPORT_AUTO,
+    REPORT_EN,
+    REPORT_ZH,
+    get_report_language,
+    set_report_language,
+)
+from core.spectral import MAX_SPECTROGRAM_FRAMES, fourier_analysis, stft_spectrogram
 from core.statistics import (
     attach_calibration, interval_statistics, probe_time, statistics_rows,
 )
@@ -43,9 +61,11 @@ from core.txt_export import file_md5, write_analysis_txt
 from .audio_player import AudioPlayer
 from .batch_dialog import BatchDialog
 from .batch_progress import BatchProgressOverlay, BatchWorker
+from .batch_summary_dialog import BatchSummaryDialog
 from .busy_overlay import BusyOverlay
 from .calibration_dialog import CalibrationDialog
 from .chat_view import ChatView
+from .data_export_dialog import DataExportDialog
 from .image_export_dialog import (
     KIND_SPECTROGRAM, KIND_SPECTRUM, KIND_WAVE, ImageExportDialog, suggest_path,
 )
@@ -58,6 +78,28 @@ from .workers import AIWorker
 DETAIL_LIMIT = 400_000
 # 全览曲线的列数上限，兼顾形态保真与重绘速度。
 OVERVIEW_COLUMNS = 6000
+# 频谱与时频图共用的窗函数：值是 scipy 窗名，界面显示用中文名。
+# 两者必须同步——历史上时频图写死 hann，界面换窗后频谱变了、时频图没变，很容易误读。
+# 显示文案在 _window_items() 里逐个写成字面量 tr("…")，i18n 工具靠 AST 认字面量，拼出来会漏检。
+SPECTRUM_WINDOWS = ("hann", "hamming", "blackman", "boxcar")
+
+
+def _window_items() -> list[str]:
+    return [
+        tr("汉宁窗 Hann"),
+        tr("海明窗 Hamming"),
+        tr("布莱克曼窗 Blackman"),
+        tr("矩形窗 Rectangular"),
+    ]
+
+
+def _report_language_items() -> list[str]:
+    """报告语言下拉：顺序必须与 REPORT_LANGUAGE_CODES 一致。"""
+    return [tr("跟随界面"), tr("中文"), tr("English")]
+
+
+REPORT_LANGUAGE_CODES = (REPORT_AUTO, REPORT_ZH, REPORT_EN)
+
 # 撤销栈上限：长音频每级撤销都要复制整段处理数据，必须设硬上限。
 MAX_UNDO_LEVELS = 4
 MAX_UNDO_BYTES = 1_200_000_000
@@ -74,14 +116,16 @@ def _analyze_channel(
     start_s: float,
     end_s: float,
     calibration: "Calibration | None" = None,
+    window: str = "hann",
 ) -> dict:
     """纯计算：在线程中运行，不触碰任何 Qt 对象。
 
     calibration 必须由调用方在进入线程前取好（它来自界面上的下拉框），
-    线程里再去读 Qt 控件是非法的。
+    线程里再去读 Qt 控件是非法的。window 同理，也必须由调用方取好传进来。
     """
-    fourier = fourier_analysis(samples, sample_rate, fundamental_frequency=fundamental)
-    spectrogram = stft_spectrogram(samples, sample_rate)
+    fourier = fourier_analysis(samples, sample_rate, window=window,
+                               fundamental_frequency=fundamental)
+    spectrogram = stft_spectrogram(samples, sample_rate, window=window)
     stats = interval_statistics(samples, sample_rate, start_s, end_s, valid_mask,
                                 fundamental, calibration=calibration)
     overview = _downsample_series(samples, sample_rate, OVERVIEW_COLUMNS)
@@ -126,6 +170,24 @@ _PYI_ENV_PREFIX = "_PYI_"
 _PYI_ENV_EXACT = ("_MEIPASS2",)
 
 
+def _restart_command() -> tuple[str, list[str]]:
+    """返回重启本程序用的 ``(可执行文件, 参数列表)``。
+
+    坑：源码方式运行时 ``sys.executable`` 是 python.exe，而 ``sys.argv[0]`` 是
+    ``run_app.py``。以前直接传 ``sys.argv[1:]``，重启就变成「裸解释器 + 零参数」，
+    新进程找不到脚本、读完空 stdin 立即退出——用户看到的就是一切语言窗口一闪就没。
+    打包后的单文件版 argv[0] 就是 exe 自身，参数才是真正的用户参数，因此两种形态
+    要分开算。
+    """
+    if getattr(sys, "frozen", False):
+        return sys.executable, list(sys.argv[1:])
+    script = Path(sys.argv[0]) if sys.argv and sys.argv[0] else Path(__file__)
+    if not script.is_file():
+        script = Path(__file__)
+    # 换用同目录的 pythonw.exe：否则切语言后新进程会带出一个控制台黑框。
+    return pythonw_sibling(sys.executable), [str(script.resolve()), *sys.argv[1:]]
+
+
 def _pyinstaller_free_env(environ: dict[str, str] | None = None) -> dict[str, str]:
     """去掉 PyInstaller onefile 引导器写进环境变量的临时目录指针。
 
@@ -141,6 +203,51 @@ def _pyinstaller_free_env(environ: dict[str, str] | None = None) -> dict[str, st
             if key not in _PYI_ENV_EXACT and not key.startswith(_PYI_ENV_PREFIX)}
 
 
+class _ComboWheelGuard(QObject):
+    """滚轮落在下拉框/数字框/页签栏上时，转交给外层滚动区，按钮值不动。
+
+    用户反馈的原话是「滚轮被这些控件卡住」：控件把滚轮吃掉，面板就滚不动；
+    而如果放行，滚轮又会直接改掉用户填好的数值。两头都不对。
+    正确做法是**不消费**，而是把同一个滚轮事件转给最近的 QAbstractScrollArea，
+    让左侧工具栏照常滚动——只有控件已经获得焦点时，滚轮才用来调值。
+    """
+
+    def eventFilter(self, obj, event):  # noqa: N802 - Qt 的命名约定
+        from PySide6.QtCore import QEvent
+        from PySide6.QtWidgets import QAbstractScrollArea, QAbstractSpinBox, QComboBox, QTabBar
+
+        if event.type() != QEvent.Type.Wheel:
+            return False
+        target = obj if isinstance(obj, QWidget) else None
+        while target is not None and not isinstance(
+                target, (QComboBox, QAbstractSpinBox, QTabBar)):
+            target = target.parentWidget()
+        if target is None:
+            return False
+        # 一律不调值：即使控件拿到了焦点，滚轮也只用来滚面板。
+        # 改值请点开下拉框用鼠标选，或点数字框用上下箭头/键盘。
+        # 找到外层滚动区并把滚轮转给它；找不到就当作普通滚轮放行
+        area = target.parentWidget()
+        while area is not None and not isinstance(area, QAbstractScrollArea):
+            area = area.parentWidget()
+        if area is not None:
+            QApplication.sendEvent(area.viewport(), event)
+            return True
+        return False
+
+
+_wheel_guard: "_ComboWheelGuard | None" = None
+
+
+def _install_combo_wheel_guard() -> None:
+    global _wheel_guard
+    app = QApplication.instance()
+    if app is None or _wheel_guard is not None:
+        return
+    _wheel_guard = _ComboWheelGuard(app)
+    app.installEventFilter(_wheel_guard)
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -154,6 +261,7 @@ class MainWindow(QMainWindow):
         self.edit_depth = 0
         self.pending_denoise: DenoiseResult | None = None
         self.last_denoise: DenoiseResult | None = None
+        self.last_anc: AncDiagnostics | None = None
         self.fourier = None
         self.envelope_values: np.ndarray | None = None
         self.envelope_times: np.ndarray | None = None
@@ -170,7 +278,9 @@ class MainWindow(QMainWindow):
         self.last_ai_narrative = ""
         self.dual_result: dict | None = None
         self.edit_log: list[str] = []
+        self.edit_ops: list[dict] = []
         self.batch_worker: BatchWorker | None = None
+        self.last_batch_result = None
         # 关闭抗锯齿是本机千万点级重绘最有效的一档优化，线条宽度为 1 时观感损失很小。
         pg.setConfigOptions(antialias=False, background="w", foreground="#263238")
         self._wave_timer = QTimer(self)
@@ -190,9 +300,10 @@ class MainWindow(QMainWindow):
         self.calibration_active = ""
         self._load_calibrations()
         self._build_ui()
+        self._restore_report_language()
         self.busy = BusyOverlay(self)
         self.batch_overlay = BatchProgressOverlay(self)
-        self.statusBar().showMessage(tr("请打开 WAV 文件；原始文件始终只读"))
+        self.statusBar().showMessage(tr("请打开音频文件；原始文件始终只读"))
 
     # ---------------------------------------------------------------- UI 构建
     def _build_ui(self) -> None:
@@ -203,15 +314,38 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         self._build_ai_dock()
 
+    # ---------------------------------------------------------------- 报告语言
+    def _restore_report_language(self) -> None:
+        """读回上次选择的报告语言；缺省跟随界面语言。"""
+        code = get_report_language()
+        stored = QSettings()
+        value = str(stored.value("export/report_language", REPORT_AUTO) or REPORT_AUTO)
+        if value in REPORT_LANGUAGE_CODES:
+            code = value
+            set_report_language(code)
+        index = REPORT_LANGUAGE_CODES.index(code) if code in REPORT_LANGUAGE_CODES else 0
+        self.report_language_combo.blockSignals(True)
+        self.report_language_combo.setCurrentIndex(index)
+        self.report_language_combo.blockSignals(False)
+
+    def _report_language_changed(self, index: int) -> None:
+        if not 0 <= index < len(REPORT_LANGUAGE_CODES):
+            return
+        code = REPORT_LANGUAGE_CODES[index]
+        set_report_language(code)
+        QSettings().setValue(
+            "export/report_language", code
+        )
+
     # ---------------------------------------------------------------- 声学校准
     def _load_calibrations(self) -> None:
-        stored = QSettings("PhysicsExperiment", "SoundWavAnalyzer")
+        stored = QSettings()
         profiles, active = loads_profiles(str(stored.value("calib/profiles", "") or ""))
         self.calibration_profiles = profiles
         self.calibration_active = active
 
     def _save_calibrations(self, profiles: list[Calibration], active: str) -> None:
-        stored = QSettings("PhysicsExperiment", "SoundWavAnalyzer")
+        stored = QSettings()
         stored.setValue("calib/profiles", dumps_profiles(profiles, active))
 
     def _ready_profiles(self) -> list[Calibration]:
@@ -286,10 +420,10 @@ class MainWindow(QMainWindow):
         file_layout = QVBoxLayout(file_group)
         self.file_label = QLabel(tr("尚未载入文件"))
         self.file_label.setWordWrap(True)
-        open_button = QPushButton(tr("打开 WAV"))
+        open_button = QPushButton(tr("打开音频"))
         open_button.clicked.connect(self.open_file)
         self.channel_combo = QComboBox()
-        self.channel_combo.currentIndexChanged.connect(self.refresh_all_async)
+        self.channel_combo.currentIndexChanged.connect(self._on_channel_changed)
         self.fundamental = QDoubleSpinBox()
         self.fundamental.setRange(0, 1000000)
         self.fundamental.setValue(1000)
@@ -298,8 +432,21 @@ class MainWindow(QMainWindow):
         form = QFormLayout()
         form.addRow(tr("当前声道"), self.channel_combo)
         form.addRow(tr("已知激励频率"), self.fundamental)
+        project_row = QHBoxLayout()
+        self.save_project_button = QPushButton(tr("保存工程…"))
+        self.save_project_button.setToolTip(tr("保存源文件与操作过程；载入后可接着做，不保存处理后的音频数据"))
+        self.save_project_button.clicked.connect(self.save_project_file)
+        self.open_project_button = QPushButton(tr("打开工程…"))
+        self.open_project_button.setToolTip(tr("载入 .wavproj 工程文件，重放其中的操作过程"))
+        self.open_project_button.clicked.connect(self.open_project_file)
+        project_row.addWidget(self.save_project_button)
+        project_row.addWidget(self.open_project_button)
         file_layout.addWidget(self.file_label)
+        self.reference_label = QLabel("")
+        self.reference_label.setWordWrap(True)
+        file_layout.addWidget(self.reference_label)
         file_layout.addWidget(open_button)
+        file_layout.addLayout(project_row)
         file_layout.addLayout(form)
         layout.addWidget(file_group)
 
@@ -326,7 +473,7 @@ class MainWindow(QMainWindow):
 
         batch_group = QGroupBox(tr("批量处理"))
         batch_layout = QVBoxLayout(batch_group)
-        batch_note = QLabel(tr("一次处理多个 WAV：先搭步骤脚本，再选文件，后台逐个执行。"))
+        batch_note = QLabel(tr("一次处理多个音频文件：先搭步骤脚本，再选文件，后台逐个执行。"))
         batch_note.setWordWrap(True)
         batch_note.setStyleSheet("color: #546e7a;")
         self.batch_button = QPushButton(tr("批量处理…"))
@@ -365,6 +512,16 @@ class MainWindow(QMainWindow):
         self.amplitude_scale = QComboBox()
         self.amplitude_scale.addItems(["Linear (AMP)", "dBFS"])
         self.amplitude_scale.currentTextChanged.connect(self.update_spectrum)
+        self.window_combo = QComboBox()
+        self.window_combo.addItems(_window_items())
+        self.window_combo.setToolTip(tr("频谱与时频图使用同一个窗函数；换窗后自动重新分析"))
+        self.window_combo.currentIndexChanged.connect(self.refresh_all_async)
+        self.report_language_combo = QComboBox()
+        self.report_language_combo.addItems(_report_language_items())
+        self.report_language_combo.setToolTip(
+            tr("影响导出的 TXT/HTML 报告与对比图文字；界面语言由上方语言按钮决定")
+        )
+        self.report_language_combo.currentIndexChanged.connect(self._report_language_changed)
         self.log_frequency = QCheckBox(tr("频率轴使用对数刻度"))
         self.log_frequency.toggled.connect(self.update_spectrum)
         self.probe_time_input = QDoubleSpinBox()
@@ -379,6 +536,16 @@ class MainWindow(QMainWindow):
         dual_button.clicked.connect(self.run_dual_channel_async)
         view_layout.addWidget(QLabel(tr("频谱幅值刻度")))
         view_layout.addWidget(self.amplitude_scale)
+        view_layout.addWidget(QLabel(tr("分析窗函数")))
+        view_layout.addWidget(self.window_combo)
+        self.peak_count_spin = QSpinBox()
+        self.peak_count_spin.setRange(1, 100)
+        self.peak_count_spin.setValue(self._stored_peak_count())
+        self.peak_count_spin.setToolTip(
+            tr("只影响谱峰表、TXT/CSV 与频谱图的峰标注；不改 FFT、主频与 THD"))
+        self.peak_count_spin.valueChanged.connect(self._peak_count_changed)
+        view_layout.addWidget(QLabel(tr("谱峰数量")))
+        view_layout.addWidget(self.peak_count_spin)
         view_layout.addWidget(self.log_frequency)
         view_layout.addWidget(QLabel(tr("指定时间读数")))
         view_layout.addWidget(self.probe_time_input)
@@ -415,6 +582,10 @@ class MainWindow(QMainWindow):
         self.denoise_label.setWordWrap(True)
         denoise_layout.addRow(preview_button)
         denoise_layout.addRow(preview_actions)
+        self.anc_button = QPushButton(tr("降噪工具组…"))
+        self.anc_button.setToolTip(tr("同步平均、窄带陷波与四种自适应抵消；不满足护栏时只给诊断、不改数据"))
+        self.anc_button.clicked.connect(self.open_anc_tools)
+        denoise_layout.addRow(self.anc_button)
         denoise_layout.addRow(undo_button)
         denoise_layout.addRow(self.denoise_label)
         layout.addWidget(denoise_group)
@@ -437,13 +608,17 @@ class MainWindow(QMainWindow):
         for text, handler in [
             (tr("导出处理后 WAV"), self.export_processed_async),
             (tr("导出分析 TXT…"), self.export_analysis_txt),
-            (tr("导出图像 PNG…"), self.export_image),
+            (tr("导出图像（PNG / PDF / SVG）…"), self.export_image),
             (tr("导出当前统计 CSV"), self.export_statistics),
+            (tr("导出原始数据…"), self.export_raw_data),
             (tr("生成独立 HTML 报告"), self.export_report_async),
         ]:
             button = QPushButton(text)
             button.clicked.connect(handler)
             export_layout.addWidget(button)
+        # 报告语言决定导出产物的语言，属于导出设置，放在「导出」组里更符合直觉
+        export_layout.addWidget(QLabel(tr("报告语言")))
+        export_layout.addWidget(self.report_language_combo)
         layout.addWidget(export_group)
 
         language_group = QGroupBox(tr("界面语言"))
@@ -461,12 +636,136 @@ class MainWindow(QMainWindow):
         language_layout.addWidget(language_hint)
         layout.addWidget(language_group)
 
+        help_group = QGroupBox(tr("帮助"))
+        help_layout = QVBoxLayout(help_group)
+        manual_button = QPushButton(tr("使用手册…"))
+        manual_button.setToolTip(tr("在软件内打开手册，可搜索关键词"))
+        manual_button.clicked.connect(self.open_manual)
+        help_layout.addWidget(manual_button)
+        layout.addWidget(help_group)
+
         layout.addStretch()
         self._refresh_calibration_ui()
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(content)
         return scroll
+
+    def open_manual(self) -> None:
+        """打开软件内手册窗口（QtPdf）。"""
+        from .manual_viewer import ManualViewerDialog
+
+        dialog = ManualViewerDialog(self)
+        dialog.exec()
+
+    def set_external_reference(self, path: str | Path | None, channel: int = 0) -> None:
+        """指定外部参考 WAV 与声道号（0 基）；None 表示沿用内置声道。
+
+        声道号必须与路径一起保存——否则重放时会悄悄换一路参考。
+        这里只做 stat 级身份记录（不读文件内容），真正的解码/校验在工作线程里做。
+        """
+        self.external_reference_path = str(path) if path else None
+        self.external_reference_channel = int(channel or 0)
+        if self.external_reference_path:
+            from core.reference import file_identity
+
+            self.external_reference_meta = file_identity(self.external_reference_path)
+        else:
+            self.external_reference_meta = None
+        self._update_reference_indicator()
+
+    def _revalidate_reference_after_load(self) -> None:
+        """换了文件就重新校验参考：采样率不符等情况下明确失效，而不是等到降噪时才发现。"""
+        path = getattr(self, "external_reference_path", None)
+        if not path or self.audio is None:
+            self._update_reference_indicator()
+            return
+        from core.reference import file_identity
+
+        recorded = getattr(self, "external_reference_meta", None)
+        current = file_identity(path)
+        if recorded is not None and current != tuple(recorded):
+            # 只比大小+mtime（stat 级，微秒量级），不做全文件解码/哈希
+            self.set_external_reference(None)
+            self.statusBar().showMessage(
+                tf("参考文件已被替换或修改，已清空：{_v0}", _v0=(Path(path).name)), 8000)
+            return
+        self._update_reference_indicator()
+
+    def _restore_project_reference(self, block: dict) -> None:
+        """工程里记录的参考：缺文件或内容变了都要明确报错，不能静默换数据。
+
+        先用工程里存的 size/mtime 做**轻量身份比对**；只有旧工程没存身份时才读文件
+        算哈希。真正的内容校验（解码、采样率、声道）留给降噪工作线程。
+        """
+        self.set_external_reference(None)
+        block = block or {}
+        path = str(block.get("path") or "")
+        if not path:
+            return
+        candidate = Path(path)
+        if not candidate.is_file():
+            QMessageBox.warning(self, tr("参考文件找不到"),
+                                tf('工程里记录的参考文件不在了：{_v0}', _v0=(path)))
+            return
+
+        from core.reference import file_identity, file_sha256
+
+        saved_size = block.get("size")
+        saved_mtime = block.get("mtime_ns")
+        current = file_identity(candidate)
+        changed = False
+        if saved_size is not None and saved_mtime is not None:
+            changed = current != (int(saved_size), int(saved_mtime))
+        else:
+            # 旧工程没有身份字段：只能读一次内容比对哈希（一次性成本，之后会写身份）
+            expected = str(block.get("sha256") or "")
+            changed = bool(expected) and file_sha256(candidate) != expected
+        if changed:
+            QMessageBox.warning(
+                self, tr("参考文件已改变"),
+                tf('参考文件与保存工程时不一致：{_v0}\n为避免用错数据，已清空参考。',
+                   _v0=(path)))
+            return
+        self.set_external_reference(candidate, int(block.get("channel") or 0))
+
+    def _update_reference_indicator(self) -> None:
+        """左栏只读指示：外部参考有没有、是哪一路。"""
+        label = getattr(self, "reference_label", None)
+        if label is None:
+            return
+        path = getattr(self, "external_reference_path", None)
+        if not path:
+            label.setText(tr("参考：内置声道 / 未设置外部参考"))
+            return
+        label.setText(tf('参考：{_v0}（第 {_v1} 声道）',
+                         _v0=(Path(path).name),
+                         _v1=(int(getattr(self, "external_reference_channel", 0)) + 1)))
+
+    def _stored_peak_count(self) -> int:
+        """谱峰数量：默认 8，范围 1–100。"""
+        value = QSettings().value("analysis/peak_count", 8)
+        try:
+            return max(1, min(100, int(value)))
+        except (TypeError, ValueError):
+            return 8
+
+    def _current_peak_count(self) -> int:
+        spin = getattr(self, "peak_count_spin", None)
+        return spin.value() if spin is not None else self._stored_peak_count()
+
+    def _peak_count_changed(self, value: int) -> None:
+        """改峰数只刷新展示与后续导出，不重算 FFT。
+
+        主频、THD、频率分辨率都由 FFT 决定，与"标几个峰"无关；
+        重算会白白多花一次 FFT 的时间。
+        """
+        QSettings().setValue("analysis/peak_count", int(value))
+        QSettings().sync()
+        if getattr(self, "fourier", None) is not None:
+            self._fill_table(self.peak_table, [
+                [p["frequency_hz"], p["amplitude"], p["amplitude_dbfs"], p["phase_rad"]]
+                for p in self.fourier.peaks(count=int(value))])
 
     def _on_language_changed(self, _index: int) -> None:
         code = str(self.language_combo.currentData() or "")
@@ -487,10 +786,11 @@ class MainWindow(QMainWindow):
         # 否则退出时旧目录删不掉会弹警告。startDetached 用当前环境块启动子进程，
         # 所以复制一份、改完立刻还原即可。
         saved = dict(os.environ)
+        program, arguments = _restart_command()
         try:
             os.environ.clear()
             os.environ.update(_pyinstaller_free_env(saved))
-            started = QProcess.startDetached(sys.executable, sys.argv[1:])
+            started = QProcess.startDetached(program, arguments)
         finally:
             os.environ.clear()
             os.environ.update(saved)
@@ -512,6 +812,9 @@ class MainWindow(QMainWindow):
 
     def _plot_tabs(self) -> QWidget:
         self.tabs = QTabWidget()
+        # 页签栏上的滚轮由应用级 _ComboWheelGuard 统一处理（转交给滚动区）
+        # 应用级过滤器：下拉框/数字框没焦点时不响应滚轮（只装一次，由应用持有）
+        _install_combo_wheel_guard()
         self.wave_plot = pg.PlotWidget()
         self.wave_plot.showGrid(x=True, y=True, alpha=0.25)
         self.wave_plot.setLabel("bottom", tr("时间"), units="s")
@@ -641,20 +944,54 @@ class MainWindow(QMainWindow):
     def busy_running(self) -> bool:
         return self.task is not None
 
-    def run_task(self, title: str, func, on_done, hint: str = "", progress: bool = False) -> bool:
-        """在后台线程执行 func，期间显示“处理中”遮罩。返回是否成功启动。
+    def _request_async(self, starter) -> None:
+        """登记一个后台任务启动器：同一时刻只跑一个，后到的覆盖先到的。
+
+        为什么需要这一层：`run_task()` 在已有 worker 时返回 False，而调用方往往已经
+        先换代（让在途结果作废）再启动。旧实现里这次启动就是一去不回——新请求既没
+        排队，旧结果又被当过期丢掉，界面表现为「一直加载」。这里用单槽位保存**最新**
+        请求，等当前 worker 结束（`_task_finished`）后再启动；重复请求自然合并成一次。
+        """
+        self._pending_task = starter
+        self._drain_pending()
+
+    def _drain_pending(self) -> None:
+        """当前没有 worker 时，启动最新排队的请求。"""
+        if self.task is not None:
+            return
+        starter = getattr(self, "_pending_task", None)
+        self._pending_task = None
+        if starter is None:
+            return
+        try:
+            starter()
+        except Exception as exc:                       # 启动器自身出错不能留下死界面
+            self._set_tabs_loading(False)
+            self.statusBar().clearMessage()
+            QMessageBox.warning(self, tr("处理失败"), str(exc))
+
+    def run_task(self, title: str, func, on_done, hint: str = "", progress: bool = False,
+                 overlay: bool = True) -> bool:
+        """在后台线程执行 func，默认显示“处理中”遮罩。返回是否成功启动。
 
         progress=True 时 func 会收到 progress(fraction, message) 关键字参数。
+        overlay=False 用于「渐进加载」的后半段：此时主界面已经可用，
+        不该再被遮罩挡住，只在状态栏与页签上提示进度。
         """
         if self.task is not None:
             return False
-        self.busy.start(title, hint)
+        self._task_overlay = bool(overlay)
+        if overlay:
+            self.busy.start(title, hint)
         self.statusBar().showMessage(title)
         worker = TaskWorker(func, report_progress=progress)
         self.task = worker
         self._task_handler = on_done
         self._task_title = title
-        worker.succeeded.connect(self._task_succeeded)
+        # 回调按 worker 绑定，不再走共享槽位：两个 worker 的 succeeded 若乱序到达，
+        # 共享槽位会让后到的旧结果被新回调接收（A 的频谱被当成 B 的结果应用）。
+        worker.succeeded.connect(
+            lambda payload, w=worker, h=on_done: self._task_succeeded(w, h, payload))
         worker.failed.connect(self._task_failed)
         if progress:
             worker.progressed.connect(self._task_progressed)
@@ -670,10 +1007,14 @@ class MainWindow(QMainWindow):
         self.busy.set_hint(hint)
         self.statusBar().showMessage(hint)
 
-    def _task_succeeded(self, result) -> None:
-        handler = getattr(self, "_task_handler", None)
+    def _task_succeeded(self, worker: TaskWorker | None, handler, result) -> None:
+        """按 worker 处理成功结果：只接受仍属于当前任务的那一份。"""
+        if worker is not None and worker is not self.task:
+            # 过期 worker（已被更新请求取代）的结果直接丢弃，绝不能再应用
+            return
         self._task_handler = None
-        self.busy.stop()
+        if getattr(self, "_task_overlay", True):
+            self.busy.stop()
         if handler is None:
             return
         try:
@@ -683,7 +1024,11 @@ class MainWindow(QMainWindow):
 
     def _task_failed(self, message: str) -> None:
         self._task_handler = None
-        self.busy.stop()
+        self._pending_analysis = None
+        if getattr(self, "_task_overlay", True):
+            self.busy.stop()
+        # 失败也要撤掉页签上的「…」，否则界面看起来像永远在算
+        self._set_tabs_loading(False)
         QMessageBox.warning(self, tr("处理失败"), message)
 
     def _task_finished(self, worker: TaskWorker | None = None) -> None:
@@ -691,6 +1036,9 @@ class MainWindow(QMainWindow):
             self.task = None
         if worker is not None:
             worker.deleteLater()
+        # 释放 worker 之后再启动排队中的最新请求：succeeded/failed 回调里 self.task
+        # 还没清空，直接调 run_task 会被"已有任务在跑"挡回去。
+        self._drain_pending()
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt 命名
         super().resizeEvent(event)
@@ -702,7 +1050,7 @@ class MainWindow(QMainWindow):
     # ---------------------------------------------------------------- 数据访问
     def _require_audio(self) -> bool:
         if self.audio is None:
-            QMessageBox.information(self, tr("请先打开文件"), tr("请先打开一个 WAV 文件。"))
+            QMessageBox.information(self, tr("请先打开文件"), tr("请先打开一个音频文件。"))
             return False
         return True
 
@@ -717,10 +1065,34 @@ class MainWindow(QMainWindow):
             raise ValueError(tr("尚未载入音频"))
         return self.processed[:, self.channel_combo.currentIndex()]
 
+    @property
+    def spectrum_window(self) -> str:
+        """当前窗函数的 scipy 名；下拉越界时回落 hann。"""
+        index = self.window_combo.currentIndex()
+        if 0 <= index < len(SPECTRUM_WINDOWS):
+            return SPECTRUM_WINDOWS[index]
+        return SPECTRUM_WINDOWS[0]
+
     def current_valid_mask(self) -> np.ndarray:
         if self.valid_mask is None:
             raise ValueError(tr("尚未载入音频"))
         return self.valid_mask[:, self.channel_combo.currentIndex()]
+
+    def selection_seconds(self) -> tuple[float, float, float] | None:
+        """波形上框选的 (起点, 终点, 当前处理版本时长)。
+
+        提供给批量对话框回填裁切时刻：没有音频或选区为空时返回 None，
+        对话框据此把按钮置灰，而不是塞 0–0 进去。
+        """
+        if self.processed is None or self.audio is None:
+            return None
+        duration = self.work_duration
+        start, end = (float(value) for value in self.region.getRegion())
+        start = max(0.0, min(start, duration))
+        end = max(0.0, min(end, duration))
+        if end - start <= 1e-6:
+            return None
+        return start, end, duration
 
     def current_reference(self) -> np.ndarray | None:
         if self.reference is None:
@@ -729,44 +1101,118 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------------- 载入
     def open_file(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, tr("打开 WAV"), "", tr("WAV 音频 (*.wav)"))
+        path, _ = QFileDialog.getOpenFileName(
+            self, tr("打开音频"), "", tr("音频文件 (*.wav *.flac *.aiff *.aif)"))
         if path:
             self.load_audio_async(path)
 
+    # ---------------------------------------------------------------- 渐进加载
+    def _next_generation(self) -> int:
+        """开启新一轮分析：任何在途的旧结果都会被丢弃。
+
+        没有它的话，先载入大文件、再立刻切声道，旧文件的慢结果会覆盖新选择。
+        """
+        self._analysis_generation = getattr(self, "_analysis_generation", 0) + 1
+        return self._analysis_generation
+
+    def _generation(self) -> int:
+        return getattr(self, "_analysis_generation", 0)
+
+    def _set_tabs_loading(self, loading: bool) -> None:
+        """在傅立叶/时频/统计页签标题上加省略号，表示该项还在后台算。"""
+        base = getattr(self, "_tab_titles", None)
+        if base is None:
+            base = [self.tabs.tabText(i) for i in range(self.tabs.count())]
+            self._tab_titles = base
+        for index in (1, 2, 3):
+            if index < len(base):
+                self.tabs.setTabText(index, base[index] + (" …" if loading else ""))
+
     def load_audio_async(self, path: str | Path) -> None:
+        """两段式载入：先出元数据与波形，再单独算频谱/时频/统计。
+
+        以前要等读取、质检、FFT、STFT、统计全部算完才有画面；长文件下界面
+        长时间空白。现在第一段只读文件，第二段在后台算派生结果，期间界面可用、
+        页签上标省略号。
+        """
         source = Path(path)
-        fundamental = self.fundamental.value() or None
-        calibration = self._current_calibration()
+        generation = self._next_generation()
+        self._set_tabs_loading(True)
 
-        def work():
-            audio = read_wav(source)
-            quality = audio.quality_report()
-            samples = audio.samples[:, 0]
-            mask = np.ones(audio.samples.shape, dtype=bool)[:, 0]
-            analysis = _analyze_channel(
-                samples, audio.sample_rate, fundamental, mask, 0.0, audio.duration,
-                calibration)
-            analysis.update({"audio": audio, "quality": quality})
-            return analysis
+        def start() -> None:
+            if generation != self._generation():
+                return
 
-        self.run_task(
-            tr("正在读取并分析 WAV…"), work, self._apply_loaded,
-            hint=tf('{_v0}；长文件可能需要数秒', _v0=(source.name)),
-        )
+            def work():
+                audio = read_wav(source)
+                return {"audio": audio, "quality": audio.quality_report()}
+
+            def done(payload):
+                if generation != self._generation():
+                    return  # 已有更新的载入请求，丢弃这批元数据
+                self._apply_loaded_meta(payload)
+                self._start_analysis_stage(generation)
+
+            self.run_task(
+                tr("正在读取音频…"), work, done,
+                hint=tf('{_v0}；长文件读取可能需要数秒', _v0=(source.name)),
+            )
+
+        self._request_async(start)
+
+    def _start_analysis_stage(self, generation: int) -> bool:
+        """第二阶段：在当前样本上算频谱、时频与统计（不挡界面）。
+
+        通过 `_request_async` 排队：可能在第一阶段 worker 尚未结束时被调用，
+        此时立刻跑会被 `run_task` 挡回，页签会永远停在「…」。
+        """
+        if self.audio is None:
+            self._set_tabs_loading(False)
+            return False
+
+        def start() -> None:
+            if generation != self._generation() or self.audio is None:
+                return
+            channel = self.channel_combo.currentIndex()
+            samples = self.processed[:, channel]
+            mask = self.valid_mask[:, channel]
+            sample_rate = self.audio.sample_rate
+            fundamental = self.fundamental.value() or None
+            calibration = self._current_calibration()
+            window = self.spectrum_window
+            start_s, end_s = self.region.getRegion()
+
+            def work():
+                return _analyze_channel(samples, sample_rate, fundamental, mask,
+                                        start_s, end_s, calibration, window)
+
+            def done(payload):
+                if generation != self._generation():
+                    return
+                self._apply_analysis(payload)
+                self._set_tabs_loading(False)
+
+            self.run_task(tr("正在计算频谱与时频…"), work, done,
+                          hint=tr("傅立叶谱、时频图与统计量"), overlay=False)
+
+        self._request_async(start)
+        return True
 
     def load_audio(self, path: str | Path) -> None:
         """同步载入，供测试与脚本调用；界面入口使用 load_audio_async。"""
+        generation = self._next_generation()
         audio = read_wav(path)
-        quality = audio.quality_report()
-        samples = audio.samples[:, 0]
-        mask = np.ones(audio.samples.shape, dtype=bool)[:, 0]
-        analysis = _analyze_channel(
-            samples, audio.sample_rate, self.fundamental.value() or None, mask, 0.0, audio.duration,
-            self._current_calibration())
-        analysis.update({"audio": audio, "quality": quality})
-        self._apply_loaded(analysis)
+        self._apply_loaded_meta({"audio": audio, "quality": audio.quality_report()})
+        channel = self.channel_combo.currentIndex()
+        self._apply_analysis(_analyze_channel(
+            self.processed[:, channel], audio.sample_rate,
+            self.fundamental.value() or None, self.valid_mask[:, channel],
+            0.0, audio.duration, self._current_calibration(), self.spectrum_window))
+        self._set_tabs_loading(False)
+        self._analysis_generation = generation
 
-    def _apply_loaded(self, payload: dict) -> None:
+    def _apply_loaded_meta(self, payload: dict) -> None:
+        """只应用元数据与波形：这一步要快到用户立刻看到东西。"""
         audio: AudioData = payload["audio"]
         self.audio = audio
         # 原始数据只保留一份：reference 直接引用 audio.samples（全程不原地修改），
@@ -776,6 +1222,7 @@ class MainWindow(QMainWindow):
         self.valid_mask = np.ones(audio.samples.shape, dtype=bool)
         self.undo_stack.clear()
         self.edit_log.clear()
+        self.edit_ops.clear()
         self.edit_depth = 0
         self.pending_denoise = None
         self.last_denoise = None
@@ -784,12 +1231,12 @@ class MainWindow(QMainWindow):
         self.envelope_span = None
         self.envelope_fit = None
         self.fit_times = None
-        self.statistics = payload["statistics"]
-        self.fourier = payload["fourier"]
-        self.overview = payload["overview"]
+        # 分析结果留给第二段（渐进加载）填充；同步路径由 _apply_loaded 补齐
+        self.statistics = None
+        self.fourier = None
+        self.overview = None
         self.last_ai_narrative = ""
         self.dual_result: dict | None = None
-        self.edit_log: list[str] = []
         self.ai_assistant = None
 
         self.channel_combo.blockSignals(True)
@@ -809,13 +1256,22 @@ class MainWindow(QMainWindow):
         self.apply_button.setEnabled(False)
         self.close_preview_button.setEnabled(False)
         self._reset_time_axis(audio.duration)
-        self.update_spectrum()
-        self.update_spectrogram(payload["spectrogram"])
-        self._fill_statistics_table(self.statistics)
+        # 清空派生视图：第二段算完后由 _apply_analysis 重新填
+        self._fill_table(self.peak_table, [])
+        self._fill_table(self.harmonic_table, [])
+        self.fourier_summary.setText("")
+        self.stats_table.setRowCount(0)
         self._render_wave()
         self._update_edit_label()
         self.statusBar().showMessage(
-            tf('已载入 {_v0}｜{_v1:.1f} s / {_v2} Hz；主频与 THD 基于受限窗口（详见傅立叶分析页），统计量使用完整选区。', _v0=(audio.source_path), _v1=(audio.duration), _v2=(audio.sample_rate)), 8000)
+            tf('已载入 {_v0}｜{_v1:.1f} s / {_v2} Hz；正在计算频谱与时频…', _v0=(audio.source_path), _v1=(audio.duration), _v2=(audio.sample_rate)), 8000)
+
+        self._revalidate_reference_after_load()
+
+    def _apply_loaded(self, payload: dict) -> None:
+        """兼容入口：一次性应用元数据 + 分析结果（供测试与旧调用方）。"""
+        self._apply_loaded_meta(payload)
+        self._apply_analysis(payload)
 
     def _reset_time_axis(self, duration: float) -> None:
         self.region.setRegion([0, duration])
@@ -830,21 +1286,40 @@ class MainWindow(QMainWindow):
     def refresh_all_async(self) -> bool:
         if self.audio is None or self.processed is None:
             return False
-        channel = self.channel_combo.currentIndex()
-        # 后台只读，直接传视图，省掉两份全量副本（千万点级各约 350 MB）。
-        samples = self.processed[:, channel]
-        mask = self.valid_mask[:, channel]
-        sample_rate = self.audio.sample_rate
-        fundamental = self.fundamental.value() or None
-        calibration = self._current_calibration()
-        start_s, end_s = self.region.getRegion()
-        return self.run_task(
-            tr("正在重新分析当前声道…"),
-            lambda: _analyze_channel(samples, sample_rate, fundamental, mask, start_s, end_s,
-                                     calibration),
-            self._apply_analysis,
-            hint=tr("傅立叶谱、时频图与统计量"),
-        )
+        # 每次重新分析都换代：上一次的在途结果（可能属于旧声道/旧选区）直接作废
+        generation = self._next_generation()
+        self._set_tabs_loading(True)
+
+        def start() -> None:
+            if generation != self._generation() or self.audio is None:
+                return
+            # 快照放到真正启动时再取：排队期间数据可能已被撤销/编辑改过，
+            # 提前取视图会让分析读到新旧混合的状态。
+            channel = self.channel_combo.currentIndex()
+            samples = self.processed[:, channel]
+            mask = self.valid_mask[:, channel]
+            sample_rate = self.audio.sample_rate
+            fundamental = self.fundamental.value() or None
+            calibration = self._current_calibration()
+            window = self.spectrum_window
+            start_s, end_s = self.region.getRegion()
+
+            def done(payload):
+                if generation != self._generation():
+                    return
+                self._apply_analysis(payload)
+                self._set_tabs_loading(False)
+
+            self.run_task(
+                tr("正在重新分析当前声道…"),
+                lambda: _analyze_channel(samples, sample_rate, fundamental, mask, start_s, end_s,
+                                         calibration, window),
+                done,
+                hint=tr("傅立叶谱、时频图与统计量"),
+            )
+
+        self._request_async(start)
+        return True
 
     def refresh_all(self) -> None:
         """同步刷新，供测试与内部调用。"""
@@ -862,7 +1337,7 @@ class MainWindow(QMainWindow):
         payload = _analyze_channel(
             self.current_samples(), self.audio.sample_rate,
             self.fundamental.value() or None, self.current_valid_mask(), start_s, end_s,
-            self._current_calibration())
+            self._current_calibration(), self.spectrum_window)
         self._apply_analysis(payload)
 
     def _apply_analysis(self, payload: dict) -> None:
@@ -967,14 +1442,15 @@ class MainWindow(QMainWindow):
         self.fourier_summary.setText(
             tf('主频 {_v0:.4f} Hz；主频峰值振幅 {_v1:.6g} FS；THD {_v2:.4%}；窗函数 {_v3}；FFT 点数 {_v4}。{scope} dBFS 不等于 dB SPL。', _v0=(result.main_frequency), _v1=(result.main_amplitude), _v2=(result.thd), _v3=(result.window), _v4=(result.n_fft), scope=(scope))
         )
-        self._fill_table(self.peak_table, [[p["frequency_hz"], p["amplitude"], p["amplitude_dbfs"], p["phase_rad"]] for p in result.peaks()])
+        self._fill_table(self.peak_table, [[p["frequency_hz"], p["amplitude"], p["amplitude_dbfs"], p["phase_rad"]] for p in result.peaks(count=self._current_peak_count())])
         self._fill_table(self.harmonic_table, [[h["order"], h["frequency_hz"], h["amplitude"], h["amplitude_dbfs"], h["phase_rad"]] for h in result.harmonics()])
 
     def update_spectrogram(self, data=None) -> None:
         if self.audio is None:
             return
         if data is None:
-            data = stft_spectrogram(self.current_samples(), self.audio.sample_rate)
+            data = stft_spectrogram(self.current_samples(), self.audio.sample_rate,
+                                    window=self.spectrum_window)
         times, frequencies, magnitude = data
         # 留存一份供导出时频图使用，避免再次做 STFT。
         self.spectrogram = (times, frequencies, magnitude)
@@ -1109,6 +1585,12 @@ class MainWindow(QMainWindow):
 
     def _show_denoise_preview(self, result: DenoiseResult, times=None, values=None) -> None:
         self.pending_denoise = result
+        # 记下这份预览是哪个声道算出来的：换声道后绝不能拿它去覆盖另一个声道
+        self.pending_denoise_channel = int(self.channel_combo.currentIndex())
+        self.pending_denoise_params = {
+            "threshold": float(self.threshold.value()),
+            "max_repair_ms": float(self.max_repair.value()),
+        }
         sample_rate = self.audio.sample_rate
         if times is None or values is None:
             times, values = _downsample_series(result.cleaned, sample_rate, self._plot_columns())
@@ -1123,6 +1605,20 @@ class MainWindow(QMainWindow):
         self.close_preview_button.setEnabled(True)
         self.statusBar().showMessage(
             tf('预览完成：{_v0} 段冲击（橙色曲线为预览，未写入数据）', _v0=(len(result.events))), 6000)
+
+    def _on_channel_changed(self, *_args) -> None:
+        """切换声道：丢弃上一声道的去噪预览，再刷新分析。
+
+        预览结果是与具体声道绑定的；留着它会让「应用预览」把声道 A 的处理写进
+        声道 B（BUG-001）。这里直接作废，用户要重新检测一次。
+        """
+        if self.pending_denoise is not None:
+            self.pending_denoise = None
+            self.preview_curve.clear()
+            self.apply_button.setEnabled(False)
+            self.close_preview_button.setEnabled(False)
+            self.denoise_label.setText(tr("已切换声道，上一声道的预览已丢弃"))
+        self.refresh_all_async()
 
     def _preview_active(self) -> bool:
         data = self.preview_curve.xData
@@ -1140,13 +1636,14 @@ class MainWindow(QMainWindow):
         self.denoise_label.setText(tr("预览已关闭，处理数据未改动") if had_preview else tr("尚未检测"))
         self.statusBar().showMessage(tr("已关闭去噪预览（橙色曲线），数据未做任何修改"), 4000)
 
-    def _push_undo(self, kind: str = "edit") -> None:
+    def _push_undo(self, kind: str = "edit", params: dict | None = None) -> None:
         # reference 全程只做整体替换、不原地改写，因此按引用保存即可，
         # 无需为每一级撤销各留一份原始波形（千万点级约 350 MB/份）。
         self.undo_stack.append((
             self.processed.copy(), self.valid_mask.copy(), self.reference, self.edit_depth,
         ))
         self.edit_log.append(kind)
+        self.edit_ops.append({"kind": kind, "params": dict(params or {})})
         self._trim_undo_stack()
 
     def _trim_undo_stack(self) -> None:
@@ -1155,10 +1652,14 @@ class MainWindow(QMainWindow):
             self.undo_stack.pop(0)
             if self.edit_log:
                 self.edit_log.pop(0)
+            if self.edit_ops:
+                self.edit_ops.pop(0)
         while len(self.undo_stack) > 1 and self._undo_bytes() > MAX_UNDO_BYTES:
             self.undo_stack.pop(0)
             if self.edit_log:
                 self.edit_log.pop(0)
+            if self.edit_ops:
+                self.edit_ops.pop(0)
 
     def _undo_bytes(self) -> int:
         return sum(
@@ -1167,7 +1668,9 @@ class MainWindow(QMainWindow):
 
     def _commit_denoise(self, result: DenoiseResult, channel: int) -> None:
         """只提交数组与状态，不产生任何 Qt 调用，可安全地在工作线程执行。"""
-        self._push_undo("denoise")
+        params = dict(getattr(self, "pending_denoise_params", {}) or {})
+        params["channel"] = int(channel)
+        self._push_undo("denoise", params)
         self.processed[:, channel] = result.cleaned
         self.valid_mask[:, channel] = result.valid_mask
         self.last_denoise = result
@@ -1195,13 +1698,14 @@ class MainWindow(QMainWindow):
         sample_rate = self.audio.sample_rate
         fundamental = self.fundamental.value() or None
         calibration = self._current_calibration()
+        window = self.spectrum_window
         start, end = self.region.getRegion()
 
         def work():
             self._commit_denoise(result, channel)
             return _analyze_channel(
                 self.processed[:, channel], sample_rate, fundamental,
-                self.valid_mask[:, channel], start, end, calibration)
+                self.valid_mask[:, channel], start, end, calibration, window)
 
         def done(payload):
             self.edit_depth += 1
@@ -1215,6 +1719,192 @@ class MainWindow(QMainWindow):
         self.run_task(tr("正在应用去噪结果…"), work, done, hint=tr("重新计算频谱与统计量"))
         return True
 
+    # ---------------------------------------------------------------- 降噪工具组
+    def open_anc_tools(self) -> None:
+        if not self._require_audio() or self.busy_running():
+            return
+        from .anc_dialog import AncToolsDialog
+
+        dialog = AncToolsDialog(
+            self, channels=int(self.audio.channels),
+            selection=self.selection_seconds(),
+            sample_rate=int(self.audio.sample_rate),
+            external_reference=getattr(self, "external_reference_path", None),
+            reference_channel=getattr(self, "external_reference_channel", 0))
+        if dialog.exec() != QDialog.Accepted:
+            return
+        self.set_external_reference(dialog.reference_path(), dialog.reference_channel())
+        params = dialog.params()
+        params.setdefault("options", {})["reference_channel"] = dialog.reference_channel()
+        self.apply_anc_tools_async(params)
+
+    def _anc_summary(self, outcome) -> str:
+        diag = outcome.diagnostics
+        label = METHOD_LABELS.get(diag.method, diag.method)
+        lines = [tf("方法：{_v0}", _v0=(label))]
+        if diag.erle_db is not None:
+            lines.append(tf("全段 ERLE：{_v0:.1f} dB", _v0=(diag.erle_db)))
+        if diag.erle_holdout_db is not None:
+            lines.append(tf("留出段 ERLE：{_v0:.1f} dB", _v0=(diag.erle_holdout_db)))
+        if diag.delta_level_db is not None:
+            lines.append(tf("主频幅值变化：{_v0:+.2f} dB", _v0=(diag.delta_level_db)))
+        if diag.u_c_db is not None:
+            lines.append(tf("合成不确定度：{_v0:.2f} dB", _v0=(diag.u_c_db)))
+        if diag.noise_span is not None:
+            lines.append(tf("噪声段：{_v0:.3f}–{_v1:.3f} s",
+                            _v0=(diag.noise_span[0]), _v1=(diag.noise_span[1])))
+        if diag.blocked:
+            lines.append(tf("未应用：{_v0}", _v0=(diag.blocked)))
+        return "\n".join(lines)
+
+    def apply_anc_tools(self, spec: dict) -> None:
+        """同步应用；界面入口见 apply_anc_tools_async。"""
+        self.last_anc_spec = dict(spec or {})
+        outcome = self._anc_compute(
+            spec,
+            channel=int(self.channel_combo.currentIndex()),
+            sample_rate=int(self.audio.sample_rate),
+            channels=int(self.audio.channels),
+            fundamental=self.fundamental.value() or None,
+            processed=self.processed,
+            duration=self.work_duration,
+            external_reference=getattr(self, "external_reference_path", None),
+        )
+        self._anc_commit(outcome)
+
+    def _anc_compute(self, spec: dict, *, channel: int, sample_rate: int, channels: int,
+                     fundamental: float | None, processed, duration: float,
+                     external_reference: str | None = None):
+        """纯计算：只接收快照参数，**不读任何 Qt 控件**。
+
+        它会在工作线程里被调用（见 apply_anc_tools_async），而 Qt 控件只能在
+        界面线程访问（BUG-004）。所需状态由调用方在启动线程前快照好传进来。
+        """
+        method = str(spec.get("method", "ls_frozen"))
+        options = dict(spec.get("options") or {})
+        with_ref = channels > 1
+        other = 1 if channel == 0 else 0
+        target = processed[:, channel].copy()
+        reference = processed[:, other].copy() if with_ref else None
+        align_info = None
+        external = None
+        if external_reference:
+            from core.reference import align_reference, load_reference_cached
+
+            external = load_reference_cached(
+                external_reference, sample_rate=sample_rate,
+                channel=int(options.get("reference_channel", 0)))
+            if method == "noise_profile":
+                # 独立噪声画像：参考是整段噪声谱，不需要与目标逐点对齐
+                reference = external.samples.copy()
+            else:
+                # 对齐类方法：起点不齐或重叠太少时 align_reference 会抛 ReferenceError
+                reference, align_info = align_reference(external.samples, target, sample_rate)
+        segment = spec.get("segment")
+        span = None
+        if segment is not None:
+            start = max(0.0, min(float(segment[0]), duration))
+            end = min(float(segment[1]), duration)
+            if end - start >= 1e-3:
+                span = (int(round(start * sample_rate)), int(round(end * sample_rate)))
+
+        # 对齐类方法参考比目标短时只处理重叠段；noise_profile 用整段参考、不切目标
+        if method == "noise_profile":
+            used = target
+        else:
+            used = target if reference is None else target[: reference.size]
+        if span is not None:
+            lo, hi = span
+            hi = min(hi, used.size)
+            lo = min(lo, max(0, hi - 1))
+            span = (lo, hi) if hi - lo >= 2 else None
+
+        outcome = run_anc_method(method, used, reference, sample_rate,
+                                 fundamental=fundamental, segment=span, params=options)
+        if external is not None and method == "noise_profile":
+            outcome.diagnostics.notes.append(
+                tf("参考 {_v0}；第 {_v1} 声道；独立噪声画像不做逐点对齐。",
+                   _v0=(external.path.name), _v1=(external.channel + 1)))
+        if align_info is not None:
+            if outcome.applied and used.size < target.size:
+                from core.anc import Outcome
+
+                cleaned = target.copy()
+                cleaned[: used.size] = outcome.cleaned
+                outcome = Outcome(cleaned, outcome.diagnostics)
+            note_parts = [tf("参考 {_v0}", _v0=(external.path.name)),
+                          tf("第 {_v0} 声道", _v0=(external.channel + 1)),
+                          tf("起点差 {_v0} 点", _v0=(align_info["lag_samples"]))]
+            if align_info["unprocessed_frames"]:
+                note_parts.append(tf("未覆盖的 {_v0:,} 点保持原样",
+                                     _v0=(align_info["unprocessed_frames"])))
+            outcome.diagnostics.notes.append("；".join(note_parts) + "。")
+        return outcome
+
+    def _anc_commit(self, outcome) -> None:
+        diag = outcome.diagnostics
+        self.last_anc = diag
+        summary = self._anc_summary(outcome)
+        self.denoise_label.setText(summary)
+        if not outcome.applied:
+            QMessageBox.warning(self, tr("降噪没有应用"), summary)
+            self.statusBar().showMessage(tr("降噪未应用：数据未改动"), 5000)
+            return
+        channel = self.channel_combo.currentIndex()
+        self._push_undo("denoise_tools", dict(getattr(self, "last_anc_spec", {}) or {}))
+        self.processed[:, channel] = outcome.cleaned
+        self.edit_depth += 1
+        self._update_edit_label()
+        self.statusBar().showMessage(tr("已应用降噪（可撤销）；原始 WAV 未修改"), 5000)
+
+    def apply_anc_tools_async(self, spec: dict) -> bool:
+        if self.audio is None or self.busy_running():
+            return False
+        channel = self.channel_combo.currentIndex()
+        sample_rate = self.audio.sample_rate
+        calibration = self._current_calibration()
+        window = self.spectrum_window
+        start, end = self.region.getRegion()
+        # 界面线程里先把工作线程需要的一切快照下来：工作函数里不能再碰控件（BUG-004）
+        channels = int(self.audio.channels)
+        fundamental = self.fundamental.value() or None
+        processed = self.processed
+        duration = self.work_duration
+        mask = self.valid_mask
+        external_reference = getattr(self, "external_reference_path", None)
+        self.last_anc_spec = dict(spec or {})
+
+        def work():
+            outcome = self._anc_compute(
+                spec, channel=int(channel), sample_rate=int(sample_rate),
+                channels=channels, fundamental=fundamental,
+                processed=processed, duration=duration,
+                external_reference=external_reference)
+            if not outcome.applied:
+                return outcome, None
+            cleaned = outcome.cleaned
+            return outcome, _analyze_channel(
+                cleaned, sample_rate, fundamental,
+                mask[:, channel], start, end, calibration, window)
+
+        def done(payload):
+            outcome, analysis = payload
+            if not outcome.applied:
+                self._anc_commit(outcome)
+                return
+            diag = outcome.diagnostics
+            self.last_anc = diag
+            self._push_undo("denoise_tools", dict(getattr(self, "last_anc_spec", {}) or {}))
+            self.processed[:, channel] = outcome.cleaned
+            self.edit_depth += 1
+            self.denoise_label.setText(self._anc_summary(outcome))
+            self._apply_analysis(analysis)
+            self._update_edit_label()
+            self.statusBar().showMessage(tr("已应用降噪（可撤销）；原始 WAV 未修改"), 5000)
+
+        return self.run_task(tr("正在做降噪…"), work, done,
+                             hint=tr("按所选方法估计并抵消噪声"))
+
     def _undo_core(self) -> bool:
         if not self.undo_stack:
             self.statusBar().showMessage(tr("没有可撤销的处理"), 3000)
@@ -1222,6 +1912,10 @@ class MainWindow(QMainWindow):
         self.processed, self.valid_mask, self.reference, self.edit_depth = self.undo_stack.pop()
         if self.edit_log:
             self.edit_log.pop()
+        # edit_ops 与 edit_log 必须同步弹出：工程文件用的是 edit_ops，
+        # 只弹 edit_log 会让「撤销过的操作」在重开工程时又跑一遍（BUG-002）。
+        if self.edit_ops:
+            self.edit_ops.pop()
         self.pending_denoise = None
         self.preview_curve.clear()
         self.apply_button.setEnabled(False)
@@ -1360,7 +2054,7 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             QMessageBox.warning(self, tr("裁剪失败"), str(exc))
             return None
-        self._push_undo("trim")
+        self._push_undo("trim", {"start": float(start), "end": float(end)})
         self.processed = result.samples
         self.valid_mask = result.valid_mask
         self.reference = self.reference[result.start_sample:result.end_sample].copy()
@@ -1421,6 +2115,10 @@ class MainWindow(QMainWindow):
             self.reference = self.processed.copy()
             self.audio.samples = self.processed
             self.undo_stack.clear()
+            # 源文件已经是处理后的新基线，配方必须一起清空——
+            # 否则重开工程会把已经写进源文件的裁剪/去噪再执行一次（BUG-003）。
+            self.edit_log.clear()
+            self.edit_ops.clear()
             self.edit_depth = 0
             self._update_edit_label()
             QMessageBox.information(
@@ -1428,6 +2126,249 @@ class MainWindow(QMainWindow):
                 tf('已写入：\n{source}\n\n备份文件：\n{backup}', source=(source), backup=(backup)))
 
         self.run_task(tr("正在写回源文件…"), work, done, hint=tr("先备份再覆盖，写入可能需要数秒"))
+
+    # ---------------------------------------------------------------- 工程文件
+    def _project_payload(self) -> dict:
+        """把当前状态收成「源文件 + 操作配方」，不含处理后的采样数据。"""
+        audio = self.audio
+        assert audio is not None
+        selection = self.selection_seconds()
+        reference = None
+        reference_path = getattr(self, "external_reference_path", None)
+        if reference_path:
+            from core.reference import REFERENCE_CACHE, file_identity, file_sha256
+
+            size, mtime_ns = file_identity(reference_path)
+            # 身份没变就直接复用已校验过的哈希；否则才读文件（典型参考只有几 MB）
+            cached = REFERENCE_CACHE.get(
+                reference_path,
+                channel=int(getattr(self, "external_reference_channel", 0)),
+                sample_rate=int(audio.sample_rate))
+            digest = cached.sha256 if cached is not None else ""
+            if not digest:
+                try:
+                    digest = file_sha256(reference_path)
+                except OSError:
+                    digest = ""
+            reference = {
+                "kind": "external",
+                "path": str(reference_path),
+                "channel": int(getattr(self, "external_reference_channel", 0)),
+                "sha256": digest,
+                "size": size,
+                "mtime_ns": mtime_ns,
+            }
+        return build_project(
+            audio.source_path,
+            sample_rate=audio.sample_rate,
+            channels=audio.channels,
+            frames=int(audio.samples.shape[0]),
+            channel=int(self.channel_combo.currentIndex()),
+            edits=[dict(op) for op in self.edit_ops],
+            selection=(selection[0], selection[1]) if selection else None,
+            calibration={
+                "active": self.calibration_active,
+                "payload": dumps_profiles(self.calibration_profiles, self.calibration_active),
+            },
+            analysis={
+                "fundamental_hz": float(self.fundamental.value()) or None,
+                "envelope_model": self.envelope_model.currentText(),
+                "window": self.spectrum_window,
+                # 谱峰数量是展示参数：存进工程只为复现同一张谱峰表，不影响 FFT/主频/THD
+                "peak_count": int(self._current_peak_count()),
+            },
+            export={"report_language": get_report_language()},
+            reference=reference,
+        )
+
+    def save_project_file(self) -> None:
+        if not self._require_audio():
+            return
+        stem = self.audio.source_path.with_suffix(".wavproj")
+        path, _ = QFileDialog.getSaveFileName(
+            self, tr("保存工程"), str(stem), tr("工程文件 (*.wavproj)"),
+            options=QFileDialog.Option.DontUseNativeDialog)
+        if not path:
+            return
+        try:
+            target = save_project(path, self._project_payload())
+        except OSError as exc:
+            QMessageBox.warning(self, tr("保存工程失败"), str(exc))
+            return
+        self.statusBar().showMessage(tf('工程已保存到 {_v0}', _v0=(str(target),)), 8000)
+
+    def open_project_file(self) -> None:
+        if self.busy_running():
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, tr("打开工程"), "", tr("工程文件 (*.wavproj)"),
+            options=QFileDialog.Option.DontUseNativeDialog)
+        if not path:
+            return
+        try:
+            project = load_project(path)
+        except ValueError as exc:
+            QMessageBox.warning(self, tr("打开工程失败"), str(exc))
+            return
+        source = source_path_of(project, Path(path).parent)
+        if source is None:
+            QMessageBox.warning(
+                self, tr("找不到源文件"),
+                tr("工程里记录的音频文件不在了：请把它放回原位置，或先打开音频再载入工程。"))
+            return
+        problem = verify_source(project, source)
+        if problem is not None:
+            answer = QMessageBox.question(
+                self, tr("源文件对不上"),
+                problem + "\n\n" + tr("仍然载入这份工程？操作过程会在当前文件上重放。"))
+            if answer != QMessageBox.Yes:
+                return
+        self.load_audio(source)
+        if self.audio is None:
+            return
+        self._apply_project(project)
+
+    def _apply_project(self, project: dict) -> None:
+        self._restore_project_reference(project.get("reference") or {})
+        channel = int(project.get("channel") or 0)
+        if 0 <= channel < self.channel_combo.count():
+            self.channel_combo.blockSignals(True)
+            self.channel_combo.setCurrentIndex(channel)
+            self.channel_combo.blockSignals(False)
+
+        calibration = project.get("calibration") or {}
+        payload = str(calibration.get("payload") or "")
+        if payload:
+            try:
+                profiles, active = loads_profiles(payload)
+            except Exception:
+                profiles, active = [], ""
+            if profiles:
+                self.calibration_profiles = profiles
+                self.calibration_active = str(calibration.get("active") or active)
+                self._refresh_calibration_ui()
+
+        analysis = project.get("analysis") or {}
+        fundamental = analysis.get("fundamental_hz")
+        if fundamental:
+            self.fundamental.setValue(float(fundamental))
+        model = analysis.get("envelope_model")
+        index = self.envelope_model.findText(str(model)) if model else -1
+        if index >= 0:
+            self.envelope_model.setCurrentIndex(index)
+        window = analysis.get("window")
+        if window in SPECTRUM_WINDOWS:
+            self.window_combo.blockSignals(True)
+            self.window_combo.setCurrentIndex(SPECTRUM_WINDOWS.index(window))
+            self.window_combo.blockSignals(False)
+
+        language = (project.get("export") or {}).get("report_language")
+        if language in REPORT_LANGUAGE_CODES:
+            set_report_language(str(language))
+            self.report_language_combo.blockSignals(True)
+            self.report_language_combo.setCurrentIndex(
+                REPORT_LANGUAGE_CODES.index(str(language)))
+            self.report_language_combo.blockSignals(False)
+
+        # 谱峰数量：旧工程没有这个字段时沿用默认 8；越界钳到 1–100。
+        # 只影响展示（谱峰表/图注），不重算 FFT。
+        peaks = analysis.get("peak_count")
+        try:
+            peaks = int(peaks)
+        except (TypeError, ValueError):
+            peaks = 8
+        peaks = max(1, min(100, peaks))
+        self.peak_count_spin.blockSignals(True)
+        self.peak_count_spin.setValue(peaks)
+        self.peak_count_spin.blockSignals(False)
+
+        self.edit_depth = 0
+        self.edit_log.clear()
+        self.edit_ops.clear()
+        self.undo_stack.clear()
+        problems = self._replay_edits(project.get("edits") or [], channel)
+        self.edit_depth = len(self.edit_log)
+
+        # 先重置时间轴（它内部会把选区强制设为全文件），再恢复工程里的选区，
+        # 否则刚设好的选区立刻被覆盖成全量（BUG-006）。
+        self._reset_time_axis(self.work_duration)
+
+        selection = project.get("selection")
+        if isinstance(selection, list) and len(selection) == 2:
+            try:
+                start, end = float(selection[0]), float(selection[1])
+            except (TypeError, ValueError):
+                start = end = 0.0
+            duration = self.work_duration
+            if 0.0 <= start < end <= duration + 1e-9:
+                self.region.setRegion((start, end))
+
+        self.refresh_all()
+        self._update_edit_label()
+        if problems:
+            QMessageBox.warning(
+                self, tr("部分操作没能重放"),
+                "\n".join(problems[:8]))
+        else:
+            self.statusBar().showMessage(
+                tf('工程已载入：重放 {_v0} 步操作', _v0=(len(self.edit_log),)), 8000)
+
+    def _replay_edits(self, edits: list[dict], default_channel: int) -> list[str]:
+        """按配方重放编辑；返回没能执行的步骤说明，成功的写入编辑记录。"""
+        problems: list[str] = []
+        sample_rate = self.audio.sample_rate if self.audio is not None else 0
+        channels = int(self.processed.shape[1]) if self.processed is not None else 1
+        for op in edits:
+            kind = str(op.get("kind") or "")
+            params = dict(op.get("params") or {})
+            try:
+                if kind == "denoise":
+                    column = min(max(int(params.get("channel", default_channel)), 0), channels - 1)
+                    result = detect_and_repair_impulses(
+                        self.processed[:, column], sample_rate,
+                        float(params.get("threshold", 8.0)),
+                        max_repair_ms=float(params.get("max_repair_ms", 3.0)))
+                    self.processed[:, column] = result.cleaned
+                    self.valid_mask[:, column] = result.valid_mask
+                    self.last_denoise = result
+                elif kind == "trim":
+                    result = trim_range(
+                        self.processed, self.valid_mask, sample_rate,
+                        float(params.get("start", 0.0)),
+                        float(params.get("end", self.work_duration)))
+                    self.processed = result.samples
+                    self.valid_mask = result.valid_mask
+                    self.reference = self.reference[result.start_sample:result.end_sample].copy()
+                elif kind == "denoise_tools":
+                    column = min(max(int(params.get("channel", default_channel)), 0), channels - 1)
+                    other = 0 if column != 0 else min(1, channels - 1)
+                    target = self.processed[:, column].copy()
+                    reference = self.processed[:, other].copy() if channels > 1 else None
+                    segment = params.get("segment")
+                    span = None
+                    if isinstance(segment, (list, tuple)) and len(segment) == 2:
+                        span = (
+                            int(round(float(segment[0]) * sample_rate)),
+                            int(round(float(segment[1]) * sample_rate)),
+                        )
+                    outcome = run_anc_method(
+                        str(params.get("method") or "ls_frozen"),
+                        target, reference, sample_rate,
+                        fundamental=float(self.fundamental.value()) or None,
+                        segment=span,
+                        params=dict(params.get("options") or {}))
+                    if outcome.cleaned is not None:
+                        self.processed[:, column] = outcome.cleaned
+                    self.last_anc = outcome.diagnostics
+                else:
+                    problems.append(tf('不认识的操作：{_v0}', _v0=(kind,)))
+                    continue
+            except Exception as exc:  # 单个步骤失败不能把整个工程卡死
+                problems.append(f"{kind}: {exc}")
+                continue
+            self.edit_log.append(kind)
+            self.edit_ops.append({"kind": kind, "params": params})
+        return problems
 
     def _update_edit_label(self) -> None:
         if self.edit_depth == 0:
@@ -1491,6 +2432,66 @@ class MainWindow(QMainWindow):
                       lambda result: self.statusBar().showMessage(tf('已导出 {result}', result=(result)), 5000),
                       hint=Path(path).name)
 
+    def export_raw_data(self) -> None:
+        """把频谱 / 峰值 / 包络 / 时频矩阵按需写成 CSV 或 NPZ。"""
+        if not self._require_audio():
+            return
+        available = {
+            "spectrum": self.fourier is not None,
+            "peaks": self.fourier is not None,
+            "envelope": self.envelope_values is not None and self.envelope_times is not None,
+            "spectrogram": self.spectrogram is not None,
+        }
+        if not any(available.values()):
+            QMessageBox.information(self, tr("没有可导出的数据"),
+                                    tr("请先完成频谱分析或包络拟合，再导出原始数据。"))
+            return
+        source = self.audio.source_path
+        stem = Path(source).stem if source else "data"
+        default_dir = str(Path(source).parent) if source else str(Path.cwd())
+        dialog = DataExportDialog(self, stem=stem, available=available, default_dir=default_dir)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        folder = Path(dialog.output_dir())
+        sample_rate = self.audio.sample_rate
+        written: list[str] = []
+        try:
+            for kind in dialog.checked_kinds():
+                if kind == "spectrum" and self.fourier is not None:
+                    target = folder / f"{dialog.file_name(kind)}.csv"
+                    export_spectrum_csv(target, self.fourier)
+                    written.append(target.name)
+                elif kind == "peaks" and self.fourier is not None:
+                    target = folder / f"{dialog.file_name(kind)}.csv"
+                    export_peaks_csv(target, self.fourier, peak_count=self._current_peak_count())
+                    written.append(target.name)
+                elif kind == "envelope" and self.envelope_values is not None:
+                    target = folder / f"{dialog.file_name(kind)}.csv"
+                    fitted = (evaluate_fit(self.envelope_fit, self.envelope_times)
+                              if self.envelope_fit is not None else None)
+                    export_envelope_csv(target, self.envelope_times, self.envelope_values, fitted)
+                    written.append(target.name)
+                elif kind == "spectrogram" and self.spectrogram is not None:
+                    times, frequencies, magnitude = self.spectrogram
+                    nperseg = 1024
+                    noverlap = nperseg // 2
+                    total = int(self.processed.shape[0])
+                    target = folder / f"{dialog.file_name(kind)}.npz"
+                    export_spectrogram_npz(
+                        target, times, frequencies, magnitude,
+                        nperseg=nperseg, noverlap=noverlap, sample_rate=sample_rate,
+                        max_frames=MAX_SPECTROGRAM_FRAMES,
+                        skipped=skipped_frames(total, nperseg, noverlap, len(times)),
+                        window=self.spectrum_window,
+                    )
+                    written.append(target.name)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, tr("导出失败"), str(exc))
+            return
+        if written:
+            self.statusBar().showMessage(
+                tf('已导出 {_v0} 个文件到 {folder}', _v0=(len(written)), folder=(str(folder))), 8000)
+
     def export_statistics(self) -> None:
         if not self._require_audio():
             return
@@ -1500,7 +2501,12 @@ class MainWindow(QMainWindow):
             return
         path, _ = QFileDialog.getSaveFileName(self, tr("导出统计"), "statistics.csv", "CSV (*.csv)")
         if path:
-            export_rows_csv(path, [self.statistics])
+            rows = [
+                {key: value for key, value in self.statistics.items()
+                 if not key.startswith("_")},
+            ]
+            rows[0]["analysis_window"] = self.spectrum_window
+            export_rows_csv(path, rows)
             self.statusBar().showMessage(tf('已导出 {path}', path=(path)), 5000)
 
     def export_report(self) -> None:
@@ -1713,7 +2719,7 @@ class MainWindow(QMainWindow):
             def work():
                 return render_waveform_png(path, **payload)
 
-            title = tr("正在导出波形图 PNG…")
+            title = tr("正在导出波形图…")
             hint = tf('当前声道 {_v0:,} 点，长音频会先抽稀再绘制', _v0=(len(payload['samples'])))
         elif kind == KIND_SPECTRUM:
             fourier = self.fourier
@@ -1721,7 +2727,7 @@ class MainWindow(QMainWindow):
             def work():
                 return render_spectrum_png(path, fourier, options)
 
-            title = tr("正在导出频谱图 PNG…")
+            title = tr("正在导出频谱图…")
             hint = tr("振幅谱") + (tr("＋相位谱") if options.show_phase else "")
         else:
             if self.spectrogram is None:
@@ -1731,11 +2737,16 @@ class MainWindow(QMainWindow):
             def work():
                 return render_spectrogram_png(path, spectrogram, options)
 
-            title = tr("正在导出时频图 PNG…")
+            title = tr("正在导出时频图…")
             hint = tr("重算 dB 色标范围")
 
         def done(result: dict):
-            size = f"{result['width']}×{result['height']}"
+            if result.get("width") is None:
+                # 矢量图没有像素尺寸，报物理尺寸，别在状态栏写 None×None。
+                inches = result.get("inches") or (0.0, 0.0)
+                size = f"{Path(result['path']).suffix.upper().lstrip('.')} {inches[0]}×{inches[1]} in"
+            else:
+                size = f"{result['width']}×{result['height']}"
             self.statusBar().showMessage(
                 tf('已导出 {_v0}（{size}，{_v2}）', _v0=(result['path']), size=(size), _v2=(KIND_LABELS[result['kind']])), 9000)
 
@@ -1753,18 +2764,20 @@ class MainWindow(QMainWindow):
         default_dir = ""
         if self.audio is not None and self.audio.source_path is not None:
             default_dir = str(self.audio.source_path.parent)
-        dialog = BatchDialog(self, default_dir=default_dir)
+        dialog = BatchDialog(self, default_dir=default_dir, selection=self.selection_seconds)
         if dialog.exec() != QDialog.Accepted:
             return
-        steps, files, output_dir = dialog.job()
-        self.start_batch(steps, files, output_dir)
+        steps, files, output_dir, reference = dialog.job()
+        self.start_batch(steps, files, output_dir, reference=reference)
 
-    def start_batch(self, steps: list[dict], files: list[str], output_dir: str = "") -> bool:
+    def start_batch(self, steps: list[dict], files: list[str], output_dir: str = "",
+                    reference: dict | None = None) -> bool:
         """启动批量流水线。返回是否真的启动（供测试直接调用，不弹对话框）。"""
         if self.batch_worker is not None or not steps or not files:
             return False
         worker = BatchWorker(files, steps, output_dir, self,
-                             calibration=self._current_calibration())
+                             calibration=self._current_calibration(),
+                             reference=reference)
         self.batch_worker = worker
         self.batch_overlay.cancelled.connect(worker.cancel)
         worker.staged.connect(self.batch_overlay.set_stage)
@@ -1782,6 +2795,7 @@ class MainWindow(QMainWindow):
     def _batch_succeeded(self, result) -> None:
         self.batch_overlay.finish()
         self.batch_button.setEnabled(True)
+        self.last_batch_result = result
         lines = result.summary().splitlines()
         self.statusBar().showMessage(lines[0] if lines else tr("批量处理结束"), 15000)
         box = QMessageBox(self)
@@ -1790,7 +2804,20 @@ class MainWindow(QMainWindow):
         box.setText(lines[0] if lines else tr("批量处理结束"))
         if len(lines) > 1:
             box.setInformativeText("\n".join(lines[1:]))
+        summary_button = None
+        if result.files:
+            summary_button = box.addButton(tr("查看汇总"), QMessageBox.ActionRole)
         box.exec()
+        if summary_button is not None and box.clickedButton() is summary_button:
+            self.show_batch_summary()
+
+    def show_batch_summary(self) -> None:
+        """批量完成后查看/导出横向对比表与对比图。"""
+        if self.last_batch_result is None:
+            self.statusBar().showMessage(tr("还没有批量结果"), 5000)
+            return
+        summary = build_summary(self.last_batch_result)
+        BatchSummaryDialog(self, summary).exec()
 
     def _batch_failed(self, message: str) -> None:
         self.batch_overlay.finish()
@@ -1839,6 +2866,9 @@ class MainWindow(QMainWindow):
             self.ai_worker = AIWorker(self.ai_assistant, message, tools, self)
             self.ai_worker.succeeded.connect(self._ai_succeeded)
             self.ai_worker.failed.connect(self._ai_failed)
+            # 线程结束后由事件循环释放：否则每问一次就多留一个 worker 和一份
+            # 完整音频快照，长音频连问几次内存会线性增长（BUG-005）。
+            self.ai_worker.finished.connect(self.ai_worker.deleteLater)
             self.ai_worker.start()
         except Exception as exc:
             self.send_button.setEnabled(True)
@@ -1895,6 +2925,8 @@ class MainWindow(QMainWindow):
         self.ai_worker = None
 
     def closeEvent(self, event) -> None:
+        # 关窗时丢掉还没启动的排队请求，避免退出过程中又拉起一个 worker
+        self._pending_task = None
         if self.ai_worker is not None:
             QMessageBox.information(self, tr("AI 请求进行中"), tr("请等待当前 AI 请求结束后再关闭程序。"))
             event.ignore()

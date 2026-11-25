@@ -56,3 +56,18 @@ record.bat
 Thumbs.db
 desktop.ini
 .DS_Store
+# ÔËĞĞÆÚ»º´æÓëÁÙÊ±Ä¿Â¼£¨²»ÒªÌá½»£©
+matplotlib-cache/
+_debug_tmp/
+_export_audit/out/
+_batch_probe/
+_p0_probe/
+
+# ---- å‘å¸ƒåŒ…ä¸æœ¬åœ°å¤§ç›®å½•ï¼ˆä¸å…¥åº“ï¼›exe/zip èµ° GitHub Releasesï¼‰ ----
+release/
+dist/
+_archive-20261123/
+_acl-recovery/
+_export_audit/
+PhysicsExperiment/
+wav_analyzer_icon.png

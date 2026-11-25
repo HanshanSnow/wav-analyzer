@@ -53,9 +53,9 @@ def test_default_language_is_chinese():
 
 
 def test_chinese_mode_returns_source_text():
-    assert tr("打开 WAV") == "打开 WAV"
+    assert tr("打开音频") == "打开音频"
     set_language(LANG_EN)
-    assert tr("打开 WAV") == "Open WAV"
+    assert tr("打开音频") == "Open audio"
 
 
 def test_unknown_text_falls_back_to_chinese():
@@ -99,13 +99,18 @@ def test_placeholders_match_between_languages():
         assert zh_names == en_names, "占位符不一致：%r → %r" % (zh, en)
 
 
-def test_restart_env_drops_pyinstaller_temp_pointers():
-    """重启子进程前必须剥掉 onefile 的临时目录指针。
+def test_restart_command_keeps_script_and_drops_pyinstaller_temp_pointers(
+    monkeypatch, tmp_path
+):
+    """重启命令必须能真正再拉起一个界面，并剥掉 onefile 的临时目录指针。
 
-    否则新进程会复用旧进程的 _MEIxxxx，旧进程退出时删不掉，
-    用户会看到 "Failed to remove temporary directory" 警告。
+    两个坑各对应一个断言：源码方式运行时 ``sys.argv[0]`` 才是脚本路径，漏了它
+    新进程就是没有脚本的裸解释器，读完空 stdin 立刻退出（切换语言闪退）；
+    打包方式运行时子进程若继承 ``_MEIxxxx``，旧进程退出会删不掉临时目录。
     """
-    from app.main_window import _pyinstaller_free_env
+    import sys
+
+    from app.main_window import _pyinstaller_free_env, _restart_command
 
     env = {
         "PATH": "/usr/bin",
@@ -119,6 +124,29 @@ def test_restart_env_drops_pyinstaller_temp_pointers():
     assert cleaned == {"PATH": "/usr/bin"}
     # 源码方式运行时本来就没有这些变量，不能凭空造出来
     assert _pyinstaller_free_env({"PATH": "/usr/bin"}) == {"PATH": "/usr/bin"}
+
+    # 源码运行：优先同目录的 pythonw.exe（无控制台）+ 脚本路径 + 用户参数
+    launcher_dir = tmp_path / "Scripts"
+    launcher_dir.mkdir()
+    console_python = launcher_dir / "python.exe"
+    windowed_python = launcher_dir / "pythonw.exe"
+    console_python.write_bytes(b"")
+    windowed_python.write_bytes(b"")
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    monkeypatch.setattr(sys, "argv", ["run_app.py", "某个.wav"])
+    monkeypatch.setattr(sys, "executable", str(console_python))
+    program, arguments = _restart_command()
+    assert program == str(windowed_python)
+    assert arguments == [str((ROOT / "run_app.py").resolve()), "某个.wav"]
+
+    # 没有 pythonw.exe 时退回 python.exe，不能拼出一个不存在的解释器路径
+    windowed_python.unlink()
+    assert _restart_command()[0] == str(console_python)
+
+    # 打包运行：可执行文件自己就是 argv[0]，用户参数原样带上
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "argv", ["WAV Analyzer.exe", "某个.wav"])
+    assert _restart_command() == (sys.executable, ["某个.wav"])
 
 
 def test_english_ui_has_no_chinese_leftovers():

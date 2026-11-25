@@ -26,13 +26,16 @@ class BatchWorker(QThread):
     succeeded = Signal(object)
     failed = Signal(str)
 
-    def __init__(self, files, steps, output_dir, parent=None, calibration=None):
+    def __init__(self, files, steps, output_dir, parent=None, calibration=None,
+                 reference=None):
         super().__init__(parent)
         self._files = list(files)
         self._steps = list(steps)
         self._output_dir = str(output_dir or "")
         # 声学校准：由主窗口在启动前取好，不在这里读界面
         self._calibration = calibration
+        # 批量级外部参考：{"path": str, "channel": int(0基)}，所有文件共用
+        self._reference = reference
         self._cancel = False
 
     def cancel(self) -> None:
@@ -44,6 +47,7 @@ class BatchWorker(QThread):
                 self._files, self._steps,
                 output_dir=self._output_dir or None,
                 calibration=self._calibration,
+                reference=self._reference,
                 progress=lambda stage, index, total, name, fraction:
                     self.staged.emit(stage, index, total, name, fraction),
                 should_cancel=lambda: self._cancel,

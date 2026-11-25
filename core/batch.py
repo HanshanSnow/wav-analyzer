@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING, Any, Callable, Sequence
 
 import numpy as np
 
+from .anc import Diagnostics as AncDiagnostics
+from .anc import METHOD_LABELS, METHOD_SPECS, run_method as run_anc_method
 from .audio_io import AudioData, read_wav, write_wav
 from .denoise import DenoiseResult, detect_and_repair_impulses
 from .editor import trim_range
@@ -110,6 +112,29 @@ STEP_SPECS: tuple[StepSpec, ...] = (
                   decimals=2, step=0.1, suffix=" ms"),
             Param("scope", tr("处理范围"), "choice", "all",
                   (("all", tr("全部声道")), ("first", tr("仅第 1 声道")))),
+        ),
+    ),
+    StepSpec(
+        "denoise_tools", tr("降噪工具组"),
+        tr("按选定的方法抑制噪声：需要假设的方法会在护栏不满足时拒绝应用并写明原因。"),
+        (
+            Param("method", tr("方法"), "choice", "ls_frozen",
+                  tuple((spec.method_id, spec.label) for spec in METHOD_SPECS)),
+            Param("order", tr("滤波器阶数"), "int", 2048, minimum=64, maximum=16384,
+                  step=64, tooltip=tr("越大越能拟合长混响，但需要更多噪声采样点（≥ 8× 阶数）")),
+            Param("block_seconds", tr("分块长度"), "float", 10.0, minimum=0.5,
+                  maximum=120.0, decimals=1, step=0.5, suffix=" s",
+                  tooltip=tr("只对「分块自适应」有用：每块的统计量按遗忘因子并入总估计")),
+            Param("notch_frequency", tr("陷波中心"), "float", 50.0, minimum=1.0,
+                  maximum=20000.0, decimals=2, step=1.0, suffix=" Hz"),
+            Param("notch_q", tr("陷波 Q 值"), "float", 30.0, minimum=1.0, maximum=200.0,
+                  decimals=1, step=1.0, tooltip=tr("Q 越大陷波越窄；Q=30 时 50 Hz 陷波对 55 Hz 影响约 0.1 dB")),
+            Param("harmonics", tr("谐波次数"), "int", 3, minimum=1, maximum=20, step=1),
+            Param("segment_start", tr("噪声段起点"), "float", 0.0, minimum=0.0,
+                  maximum=1.0e7, decimals=3, step=0.1,
+                  suffix=" " + tr("s（起点与终点都留 0 表示自动检测）")),
+            Param("segment_end", tr("噪声段终点"), "float", 0.0, minimum=0.0,
+                  maximum=1.0e7, decimals=3, step=0.1, suffix=" s"),
         ),
     ),
     StepSpec(
@@ -399,6 +424,8 @@ class BatchResult:
     outputs: list[str] = field(default_factory=list)
     cancelled: bool = False
     seconds: float = 0.0
+    # 外部参考的溯源信息（路径/声道/哈希），写进批量结果供汇总与留痕。
+    reference: dict[str, Any] | None = None
 
     @property
     def ok_count(self) -> int:
@@ -427,6 +454,9 @@ class BatchResult:
 # ---------------------------------------------------------------- 单文件状态
 
 
+_UNSET = object()
+
+
 class _State:
     """一个文件的处理状态。数组只在该步真的改数据时才产生新副本。"""
 
@@ -449,9 +479,14 @@ class _State:
         # 否则报告里的「已知激励频率」会静默回退成自动估峰。
         self.fundamental: float | None = None
         self.fourier = None
+        # 缓存对应的「有效基频」：None 表示自动估峰。换一个基频就必须重算，
+        # 否则 dual(auto) 缓存下来的峰会被后面的 stats(固定频率) 与导出沿用。
+        self.fourier_key: object = _UNSET
         self.dual: dict[str, Any] | None = None
         self.rows: dict[str, Any] = {}
         self.notes: list[str] = []
+        self.denoise_tools: AncDiagnostics | None = None
+        self.anc_row: dict[str, Any] = {}
 
     @property
     def sample_rate(self) -> int:
@@ -473,9 +508,17 @@ class _State:
 
 
 def _ensure_fourier(state: _State, fundamental: float | None):
-    if state.fourier is None:
-        state.fourier = fourier_analysis(
-            state.channel_samples(0), state.sample_rate, fundamental_frequency=fundamental)
+    """按「有效基频」缓存频谱结果。
+
+    只缓存一个对象是不够的：`dual` 用自动估峰（None）先算了一次，
+    随后 `stats` 指定了固定频率，导出却仍拿到自动估峰那份（BUG 审查 P0）。
+    缓存键必须把基频一起算进去。
+    """
+    if state.fourier is not None and state.fourier_key == fundamental:
+        return state.fourier
+    state.fourier = fourier_analysis(
+        state.channel_samples(0), state.sample_rate, fundamental_frequency=fundamental)
+    state.fourier_key = fundamental
     return state.fourier
 
 
@@ -487,6 +530,24 @@ def _ensure_stats(state: _State, params: dict[str, Any]) -> dict[str, Any]:
             state.channel_samples(0), state.sample_rate, start, end,
             state.channel_mask(0), fundamental, calibration=state.calibration)
     return state.stats
+
+
+def _invalidate_derived(state: _State) -> None:
+    """样本或有效掩码一变，所有派生结果立即作废（BUG-009）。
+
+    统计、频谱、双通道、包络、拟合时间轴全都是基于当前样本算出来的；
+    只要样本改了还留着旧值，导出里就会出现「去噪后的波形 + 去噪前的统计」
+    这种自相矛盾的数据。跳过处理的步骤（例如缺参考声道）不需要调用。
+    """
+    state.stats = None
+    state.fourier = None
+    state.fourier_key = _UNSET
+    state.dual = None
+    state.envelope = None
+    state.envelope_times = None
+    state.envelope_span = None
+    state.fit = None
+    state.fit_times = None
 
 
 # ---------------------------------------------------------------- 单文件执行
@@ -512,6 +573,7 @@ def _apply_step(state: _State, step: dict[str, Any], ctx: dict[str, Any]) -> Non
             total_excluded += result.excluded_count
             if index == 0:
                 state.denoise = result
+        _invalidate_derived(state)
         state.edits.append("denoise")
         invalid_ratio = float(1.0 - state.mask.mean())
         if invalid_ratio > 0.5:
@@ -522,16 +584,140 @@ def _apply_step(state: _State, step: dict[str, Any], ctx: dict[str, Any]) -> Non
         state.notes.append(tf('去噪修复 {total_repaired} 处，标记无效 {total_excluded} 处', total_repaired=(total_repaired), total_excluded=(total_excluded)))
         return
 
+    if kind == "denoise_tools":
+        method = str(params.get("method", "ls_frozen"))
+        spec = next((item for item in METHOD_SPECS if item.method_id == method), None)
+        if spec is None:
+            raise ValueError(tf('未知的降噪方法：{_v0}', _v0=(method)))
+        target = state.channel_samples(0)
+        needs_reference = method in ("ls_frozen", "wiener_clean", "ls_block",
+                                     "wiener_spectral", "noise_profile")
+
+        def _skip_step(message: str) -> None:
+            # 参考不满足条件不该让整批失败：记备注、跳过这一步，后面的步骤照常跑。
+            state.anc_row = {
+                "denoise_method": spec.label,
+                "denoise_applied": False,
+                "denoise_erle_db": None,
+                "denoise_holdout_erle_db": None,
+                "denoise_delta_level_db": None,
+                "denoise_u_c_db": None,
+                "denoise_blocked": message,
+            }
+            state.notes.append(message)
+
+        reference = None
+        reference_label = None
+        external = ctx.get("reference")
+        if external and external.get("path"):
+            ref_path = str(external["path"])
+            ref_channel = int(external.get("channel") or 0)
+            try:
+                from .reference import align_reference, load_reference_cached
+
+                # 整批共用同一份参考：按文件身份缓存，避免每个输入都重新解码+哈希
+                ref = load_reference_cached(ref_path, sample_rate=sample_rate,
+                                            channel=ref_channel)
+                if method == "noise_profile":
+                    reference = ref.samples.copy()
+                    align_info = None
+                else:
+                    reference, align_info = align_reference(ref.samples, target, sample_rate)
+                if align_info and align_info["unprocessed_frames"]:
+                    state.notes.append(tf(
+                        '外部参考比本文件短：只处理重叠的 {_v0:,} 点，其余保持原样',
+                        _v0=(align_info["overlap_frames"])))
+                reference_label = tf('外部参考 {_v0} 第 {_v1} 声道',
+                                     _v0=(Path(ref_path).name), _v1=(ref_channel + 1))
+            except Exception as exc:  # noqa: BLE001 - 校验失败换可读提示，逐文件记备注
+                if needs_reference:
+                    _skip_step(tf('外部参考不可用（{_v0}），本文件已跳过这一步', _v0=(str(exc))))
+                    return
+                reference = state.channel_samples(1) if state.channels > 1 else None
+        else:
+            reference = state.channel_samples(1) if state.channels > 1 else None
+        if needs_reference and reference is None:
+            _skip_step(tf('降噪工具组“{_v0}”需要第二个声道作参考，本文件只有 1 个声道，已跳过这一步',
+                          _v0=(spec.label)))
+            return
+        start = max(0.0, float(params.get("segment_start", 0.0) or 0.0))
+        end = float(params.get("segment_end", 0.0) or 0.0)
+        segment = None
+        if end > start:
+            stop = min(end, state.duration)
+            if stop > start:
+                segment = (int(round(start * sample_rate)), int(round(stop * sample_rate)))
+        fundamental = state.fundamental or resolve_fundamental(params, state.path.name)
+        # noise_profile 用整段参考、不切目标；对齐类方法参考短时只处理重叠段
+        used = target if (reference is None or method == "noise_profile") \
+            else target[: reference.size]
+        if segment is not None:
+            lo, hi = segment
+            hi = min(hi, used.size)
+            lo = min(lo, max(0, hi - 1))
+            segment = (lo, hi) if hi - lo >= 2 else None
+        outcome = run_anc_method(
+            method, used, reference, sample_rate, fundamental=fundamental, segment=segment,
+            params={
+                "order": int(params.get("order", 2048)),
+                "block_seconds": float(params.get("block_seconds", 10.0)),
+                "frequency": float(params.get("notch_frequency", 50.0)),
+                "q": float(params.get("notch_q", 30.0)),
+                "harmonics": int(params.get("harmonics", 3)),
+            })
+        diag = outcome.diagnostics
+        state.denoise_tools = diag
+        state.anc_row = {
+            "denoise_method": METHOD_LABELS.get(method, method),
+            "denoise_applied": bool(outcome.applied),
+            "denoise_erle_db": diag.erle_db,
+            "denoise_holdout_erle_db": diag.erle_holdout_db,
+            "denoise_delta_level_db": diag.delta_level_db,
+            "denoise_u_c_db": diag.u_c_db,
+            "denoise_blocked": diag.blocked or "",
+        }
+        if reference_label:
+            diag.notes.append(tf('参考：{_v0}', _v0=(reference_label)))
+            state.notes.append(tf('参考：{_v0}', _v0=(reference_label)))
+        state.edits.append(f"denoise_tools:{method}")
+        if not outcome.applied:
+            state.notes.append(
+                tf('降噪工具组“{_v0}”未应用：{_v1}', _v0=(spec.label),
+                   _v1=(diag.blocked or tr("未知原因"))))
+            return
+        cleaned = outcome.cleaned
+        if cleaned is not None and cleaned.size < target.size:
+            # 外部参考比目标短：只覆盖重叠段，余下采样保持原样。
+            state.samples[: cleaned.size, 0] = cleaned
+        else:
+            state.samples[:, 0] = cleaned
+        _invalidate_derived(state)
+        state.notes.append(
+            tf('降噪工具组“{_v0}”：ERLE {_v1:.1f} dB，合成不确定度 {_v2:.2f} dB',
+               _v0=(spec.label), _v1=(diag.erle_db or 0.0), _v2=(diag.u_c_db or 0.0)))
+        return
+
     if kind == "trim":
-        start = float(params.get("start", 0.0))
-        end = float(params.get("end", 0.0)) or state.duration
+        duration = state.duration
+        requested_start = float(params.get("start", 0.0) or 0.0)
+        requested_end = float(params.get("end", 0.0) or 0.0) or duration
+        # 批量里各文件长度不同：超出文件长度就钳制并在备注里留痕，
+        # 不要因为一个短文件把整批停下来。
+        start = max(0.0, min(requested_start, duration))
+        end = max(start, min(requested_end, duration))
+        if (abs(start - requested_start) > 1e-9 or abs(end - requested_end) > 1e-9):
+            state.notes.append(
+                tf('裁切区间超出文件长度，已钳制到 {_v0:.3f}–{_v1:.3f} s（文件 {_v2:.3f} s）',
+                   _v0=(start), _v1=(end), _v2=(duration)))
+        if end - start < 2.0 / sample_rate:
+            state.notes.append(
+                tf('警告：裁切区间 {_v0:.3f}–{_v1:.3f} s 太短，已跳过这一步', _v0=(start), _v1=(end)))
+            return
         trimmed = trim_range(state.samples, state.mask, sample_rate, start, end)
         state.samples = np.array(trimmed.samples, copy=False)
         state.mask = np.array(trimmed.valid_mask, copy=False)
         state.edits.append("trim")
-        state.stats = None
-        state.fourier = None
-        state.dual = None
+        _invalidate_derived(state)
         state.notes.append(
             tf('裁剪至 {_v0:.3f}–{_v1:.3f} s', _v0=(trimmed.start_seconds), _v1=(trimmed.end_seconds)))
         return
@@ -576,7 +762,12 @@ def _apply_step(state: _State, step: dict[str, Any], ctx: dict[str, Any]) -> Non
         fundamental = resolve_fundamental(params, state.path.name)
         if fundamental is None:
             fundamental = float(_ensure_fourier(state, None).main_frequency)
-        state.dual = analyze_dual_channel(state.audio, fundamental)
+        # 双通道分析必须用「当前」样本，而不是刚读进来的原始音频：
+        # 脚本里排在它前面的裁剪/去噪都要生效（BUG-010）。
+        from dataclasses import replace as _dc_replace
+
+        state.dual = analyze_dual_channel(
+            _dc_replace(state.audio, samples=state.samples), fundamental)
         return
 
     if kind == "export_wav":
@@ -610,13 +801,34 @@ def _output_dir(ctx: dict[str, Any], state: _State) -> Path:
     return Path(root) if root else state.path.parent
 
 
+def _unique_target(ctx: dict[str, Any], target: Path) -> Path:
+    """同一次批量里保证输出路径唯一。
+
+    不同目录下的同名 WAV 用同一个输出目录时会算出同一个目标路径，
+    原来后写的直接覆盖先写的，而结果列表里还挂着两条相同路径，
+    用户以为两份都在（BUG-008）。这里给冲突项加 _2、_3 后缀。
+    """
+    used: set[str] = ctx.setdefault("used_outputs", set())
+    key = str(target).lower()
+    if key not in used:
+        used.add(key)
+        return target
+    index = 2
+    while True:
+        candidate = target.with_name(f"{target.stem}_{index}{target.suffix}")
+        if str(candidate).lower() not in used:
+            used.add(str(candidate).lower())
+            return candidate
+        index += 1
+
+
 def _output_path(state: _State, params: dict[str, Any], default_suffix: str,
                  extension: str, ctx: dict[str, Any]) -> Path:
     suffix = str(params.get("suffix", default_suffix) or default_suffix)
     stem = state.path.stem or "audio"
     if state.channels > 1:
         stem = f"{stem}"
-    target = _output_dir(ctx, state) / f"{stem}{suffix}{extension}"
+    target = _unique_target(ctx, _output_dir(ctx, state) / f"{stem}{suffix}{extension}")
     target.parent.mkdir(parents=True, exist_ok=True)
     return target
 
@@ -687,7 +899,7 @@ def _export_png(state: _State, params: dict[str, Any], ctx: dict[str, Any]) -> N
     root = _output_dir(ctx, state)
 
     if "wave" in kinds:
-        target = root / tf('{stem}_波形.png', stem=(stem))
+        target = _unique_target(ctx, root / tf('{stem}_波形.png', stem=(stem)))
         render_waveform_png(
             target,
             samples=state.channel_samples(0),
@@ -702,13 +914,13 @@ def _export_png(state: _State, params: dict[str, Any], ctx: dict[str, Any]) -> N
         _record_output(state, target, ctx)
 
     if "spectrum" in kinds:
-        target = root / tf('{stem}_幅值谱.png', stem=(stem))
+        target = _unique_target(ctx, root / tf('{stem}_幅值谱.png', stem=(stem)))
         render_spectrum_png(target, _ensure_fourier(state, fundamental), options,
                             annotate_peaks=True, mark_harmonics=True)
         _record_output(state, target, ctx)
 
     if "spectrogram" in kinds:
-        target = root / tf('{stem}_时频图.png', stem=(stem))
+        target = _unique_target(ctx, root / tf('{stem}_时频图.png', stem=(stem)))
         spectrogram = stft_spectrogram(state.channel_samples(0), state.sample_rate)
         render_spectrogram_png(target, spectrogram, options)
         _record_output(state, target, ctx)
@@ -721,6 +933,8 @@ def _stats_row(state: _State, params: dict[str, Any]) -> dict[str, Any]:
         value = stats.get(key)
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             row[key] = value
+    # 降噪标记列：跳过/拒绝时也写进 CSV，而不是留空让人以为是 0。
+    row.update(getattr(state, "anc_row", {}) or {})
     return row
 
 
@@ -743,7 +957,8 @@ def _export_html(state: _State, params: dict[str, Any], ctx: dict[str, Any]) -> 
     fourier = _ensure_fourier(state, fundamental)
     content = build_report_html(
         str(state.path), state.sample_rate, 0, stats, fourier,
-        np.array(state.channel_samples(0), copy=True),
+        # 直接传视图：报告只读取样本，复制一份全量 float64 在长录音上要多占几百 MB
+        state.channel_samples(0),
         state.envelope, state.fit, state.denoise, "")
     target = _output_path(state, params, tr("_报告"), ".html", ctx)
     save_report(target, content)
@@ -784,8 +999,14 @@ def run_batch(
     merged_txt_name: str | None = None,
     merged_csv_name: str | None = None,
     calibration: "Calibration | None" = None,
+    reference: dict[str, Any] | None = None,
 ) -> BatchResult:
-    """按步骤脚本逐个处理文件。整个过程只读源文件，导出写到 output_dir。"""
+    """按步骤脚本逐个处理文件。整个过程只读源文件，导出写到 output_dir。
+
+    ``reference`` 是批量级的外部参考：``{"path": str, "channel": int(0基)}``。
+    所有文件共用同一份参考（按文件身份缓存，不会每个文件都重新解码），逐文件校验；
+    某个文件不满足条件时只**跳过这一步并记备注**，不让整批失败。
+    """
     paths = [Path(item) for item in files]
     script = normalize_steps(steps)
     result = BatchResult()
@@ -811,7 +1032,15 @@ def run_batch(
         "merged_outputs": set(),
         "region": None,
         "fundamental_hz": 0.0,
+        "reference": dict(reference) if reference else None,
     }
+    if reference:
+        # 记录批量级参考的溯源信息，结果与汇总里都能查到用了哪份文件、哪一路。
+        result.reference = {
+            "kind": "external",
+            "path": str(reference.get("path") or ""),
+            "channel": int(reference.get("channel") or 0),
+        }
 
     # 合并模式的目标文件：先落盘横幅，后面按文件顺序追加。
     needs_txt_merge = any(step["kind"] == "export_txt"
@@ -876,10 +1105,12 @@ def run_batch(
         emit("process", position, path.name, 1.0)
 
     # 合并输出落盘
+    merged_csv_written = False
     if needs_csv_merge and ctx["csv_rows"]:
         if not (should_cancel is not None and should_cancel()):
             emit("merge", total, Path(ctx["merged_csv"]).name, 0.0)
             export_rows_csv(ctx["merged_csv"], ctx["csv_rows"])
+            merged_csv_written = True
     if needs_txt_merge:
         target = ctx["merged_txt"]
         if target.exists():
@@ -887,7 +1118,9 @@ def run_batch(
                 handle.write(tr("\n# 批量处理结束：") + time.strftime("%Y-%m-%d %H:%M:%S") + "\n")
 
     result.outputs = list(ctx["outputs"]) + sorted(str(item) for item in ctx["merged_outputs"])
-    if needs_csv_merge and ctx["csv_rows"]:
+    # 只有在真的写盘成功后才把合并 CSV 记为输出，否则取消后会把不存在的文件
+    # 列进结果里（BUG-011）。
+    if merged_csv_written:
         result.outputs.append(str(ctx["merged_csv"]))
     result.seconds = time.perf_counter() - started
     emit("done", total, "", 1.0)

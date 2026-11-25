@@ -57,6 +57,9 @@ def compute_envelope(samples: np.ndarray, sample_rate: int, method: str = "hilbe
         envelope = hilbert_envelope(centered)
     elif method == "rms":
         window = max(1, round(rms_window_ms * sample_rate / 1000))
+        # np.convolve(mode="same") 返回两个输入里较长的那个长度；窗长超过样本数时
+        # 结果会比输入长，和下面的时间轴对不上（BUG-015）。先把窗压到样本长度。
+        window = min(window, len(x))
         envelope = np.sqrt(np.convolve(centered ** 2, np.ones(window) / window, mode="same"))
     else:
         raise ValueError(tf('未知包络方法：{method}', method=(method)))
@@ -86,6 +89,19 @@ def fit_envelope(times: np.ndarray, envelope: np.ndarray, model: str = "auto") -
     best.end_time = float(t[-1])
     best.equation = best.equation.replace("T", f"(t - {t[0]:.6g})")
     return best
+
+
+def evaluate_fit(fit: EnvelopeFit, times: np.ndarray) -> np.ndarray:
+    """在任意绝对时刻上求拟合曲线值，供导出与作图复用同一套参数。"""
+    t = np.asarray(times, dtype=np.float64).reshape(-1) - float(fit.start_time)
+    parameters = fit.parameters
+    if fit.model == "constant":
+        return np.full_like(t, parameters["a"])
+    if fit.model == "linear":
+        return parameters["a"] + parameters["b"] * t
+    if fit.model == "exponential":
+        return parameters["a"] * np.exp(np.clip(parameters["b"] * t, -700, 700)) + parameters["c"]
+    raise ValueError(tf('不支持的包络模型：{model}', model=(fit.model)))
 
 
 def _fit_one(t: np.ndarray, y: np.ndarray, model: str) -> EnvelopeFit:

@@ -35,7 +35,11 @@ ROOT = Path(__file__).resolve().parent.parent
 IMPORT_LINE = "from core.i18n import tf, tr"
 
 # 导出产物，保持中文：它们写进文件，不参与界面切换
-EXCLUDED = {"txt_export.py", "exporter.py", "figure_export.py", "i18n.py", "i18n_en.py"}
+EXCLUDED = {"txt_export.py", "exporter.py", "figure_export.py", "i18n.py",
+            "i18n_en.py", "report_i18n.py"}
+# 这些模块把中文原文存放成数据（运行时才交给 tr()/rt()），AST 看不到 tr("…") 调用。
+# 对它们额外收集所有中文串字面量，避免报告里把它们误报成「不再被引用」。
+RAW_STRING_MODULES = {"statistics.py"}
 
 CJK_RE = re.compile(r"[\u4e00-\u9fa5]")
 
@@ -222,6 +226,8 @@ def collect_used() -> list[str]:
     used: list[str] = []
     for p in _targets():
         tree = ast.parse(p.read_text(encoding="utf-8"))
+        raw = p.name in RAW_STRING_MODULES
+        skip = _docstring_nodes(tree) if raw else set()
         for node in ast.walk(tree):
             if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
                     and node.func.id in ("tr", "tf") and node.args):
@@ -229,6 +235,9 @@ def collect_used() -> list[str]:
                 if isinstance(a, ast.Constant) and isinstance(a.value, str) \
                         and CJK_RE.search(a.value):
                     used.append(a.value)
+            elif raw and isinstance(node, ast.Constant) and isinstance(node.value, str) \
+                    and id(node) not in skip and CJK_RE.search(node.value):
+                used.append(node.value)
     return sorted(set(used))
 
 

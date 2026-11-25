@@ -2,18 +2,18 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-![version](https://img.shields.io/badge/version-1.6.1-blue)
+![version](https://img.shields.io/badge/version-2.0.0-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey)
 ![python](https://img.shields.io/badge/python-3.11%2B-3776AB)
 ![license](https://img.shields.io/badge/license-MIT-green)
-![tests](https://img.shields.io/badge/tests-155%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-285%20passing-brightgreen)
 
-A Windows desktop application for turning acoustic measurement recordings into numbers you can defend. Open a WAV, inspect the waveform, spectrum and spectrogram, strip out transient hits, fit an envelope, compute interval statistics, and export fixed-width TXT, CSV, 600 dpi figures or a standalone HTML report — or push hundreds of files through a reusable batch script. An optional LLM assistant can drive the same tools in natural language, and every change it proposes still needs your confirmation.
+A Windows desktop application for turning acoustic measurement recordings into numbers you can defend. Open a WAV, FLAC or AIFF recording of any channel count, inspect the waveform, spectrum and spectrogram, strip out transient hits, run the denoising tool group, fit an envelope, compute interval statistics, and export fixed-width TXT, CSV, NPZ, raster or vector figures or a standalone HTML report — or push hundreds of files through a reusable batch script and compare the runs afterwards. The whole recipe can be saved as a project file instead of a folder of intermediate WAVs. An optional LLM assistant can drive the same tools in natural language, and every change it proposes still needs your confirmation.
 
 Waveform and selection editor / Fourier analysis:
 
-![Main window](docs/figures/00_waveform.png)
-![Fourier analysis](docs/figures/00_overview.png)
+![Main window](docs/figures_en/00_waveform.png)
+![Fourier analysis](docs/figures_en/00_overview.png)
 
 **Why it exists.** Acoustic data processing is usually "copy numbers out of Excel, plot them in Origin". Conventions drift, transcription errors hide, and the number in the report stops matching the number in the tool. WAV Analyzer pins the window function, normalisation and statistical definitions in one place, so the on-screen readout, the batch output and the exported report all come from the same code path.
 
@@ -28,7 +28,9 @@ Waveform and selection editor / Fourier analysis:
 | Impulse responses and knock tests | Envelope fit (constant / linear / exponential) with equation, R² and RMSE |
 | Recordings contaminated by handling noise, clicks or clipping | Automatic transient detection, preview before commit, interpolation repair or exclusion |
 | Level comparison between two takes (with / without a sample, near / far, before / after treatment) | Two-channel mode: cross-correlation delay, per-channel level, level difference |
-| Dozens to hundreds of runs per session | Step-script batch pipeline with progress overlay, cancellable |
+| Runs contaminated by mains hum or steady broadband noise | Denoising tool group: synchronous averaging, zero-phase notch, and four adaptive cancellation methods, each behind a guard that refuses to change data it cannot justify |
+| Dozens to hundreds of runs per session | Step-script batch pipeline with progress overlay, cancellable; a comparison report lines the runs up side by side |
+| Work that spans several sessions | A `.wavproj` project file stores the source, the recipe and the settings — not the processed samples |
 | Figures and tables for a paper or report | 600 dpi paper-size PNG, fixed-width TXT, tidy CSV, HTML report |
 
 Nothing in the program is tied to a particular rig. If it is a WAV file with a signal in it, it loads.
@@ -39,12 +41,20 @@ Nothing in the program is tied to a particular rig. If it is a WAV file with a s
 
 ### Option A — prebuilt binary (recommended)
 
-Download `WAV_Analyzer_v1.6.1_win64.zip` from [Releases](https://github.com/HanshanSnow/wav-analyzer/releases), unpack it, and double-click `WAV Analyzer.exe`. Python is not required.
+Download from [Releases](https://github.com/HanshanSnow/wav-analyzer/releases), unpack, and double-click `WAV Analyzer.exe`. Python is not required. Two builds are published; they are functionally identical:
 
-1. Unpack into its own folder, e.g. `WAV Analyzer`.
-2. The first launch is slower than later ones — the one-file build unpacks its bundled components into a temp directory. That is expected.
+| Package | What is inside | When to use it |
+| --- | --- | --- |
+| `WAV_Analyzer_v2.0.0_win64_onedir.zip` | A `WAV Analyzer\` folder (exe + `_internal`) | **Recommended.** Startup never touches the temp directory, and the first launch is faster |
+| `WAV_Analyzer_v2.0.0_win64.zip` | A single `WAV Analyzer.exe` | For when you want to carry one file; the first launch unpacks into the temp directory |
 
-> If Windows shows "Windows protected your PC", click **More info → Run anyway**. The binary is not code-signed; it is not malware. Scan it yourself if you like.
+1. Unpack into its own folder, e.g. `WAV Analyzer`; avoid `C:\Program Files`, which needs administrator rights.
+2. The single-file build is slower on first launch — it unpacks its bundled components into a temp directory. That is expected.
+3. The folder build never touches the temp directory, so it is more reliable on locked-down machines — but the `_internal` folder next to the exe must travel with it. Copying the exe alone will not run.
+
+> If Windows shows "Windows protected your PC", or "Open File - Security Warning: the publisher could not be verified", click **More info → Run anyway**, or **Run**. The binary is not code-signed; it is not malware. Scan it yourself if you like.
+>
+> A freshly installed Windows 11 usually has **Smart App Control** switched on, which warns about *every* unsigned program. It is about the machine, not the version: 1.6.1 gets the same prompt on such a system and no prompt on a machine where Smart App Control is off.
 
 **Optional command line usage** — drag a WAV onto the exe, or:
 
@@ -80,9 +90,9 @@ On Windows you can also double-click `run_app.bat`; it prefers the project's `.v
 
 | Area | Capability |
 |---|---|
-| Import | Mono or stereo WAV, quality check on load (peak, RMS, clipping warning), source file opened read-only |
+| Import | WAV, FLAC and AIFF, one channel or many (pick the channel to analyse), quality check on load (peak, RMS, clipping warning), source file opened read-only |
 | Waveform | Trace, time cursor readout, blue selection, numeric time entry |
-| Spectrum | Linear amplitude or dBFS, linear or log frequency axis, phase spectrum |
+| Spectrum | Linear amplitude or dBFS, linear or log frequency axis, phase spectrum, window function (Hann / Hamming / Blackman / rectangular) applied to spectrum and spectrogram alike |
 | Fourier analysis | Fundamental, peak amplitude, dominant spectral peaks, harmonics 1–8, THD |
 | Spectrogram | STFT distribution, for spotting broadband transients |
 | Transient repair | Detection with preview, discard preview, short-hit interpolation, long-hit exclusion, undo |
@@ -92,24 +102,28 @@ On Windows you can also double-click `run_app.bat`; it prefers the project's `.v
 | Acoustic calibration | Convert dBFS to dB SPL from microphone sensitivity, preamp gain and ADC full-scale voltage, or from a known reference level; multiple profiles, carried into statistics and every export |
 | Two-channel | Cross-correlation delay, per-channel level, level difference, AGC warning |
 | AI assistant | DeepSeek / Moonshot / OpenAI presets or any OpenAI-compatible endpoint; whitelisted tool calls; user and assistant turns in distinct coloured bubbles; answers rendered as Markdown; streamed responses so long reports no longer hit the timeout; repairs always need confirmation |
-| Export | Processed WAV, fixed-width analysis TXT, image PNG (paper or screen layout), statistics CSV, standalone HTML report |
-| Batch processing | Step script (repair / crop / envelope / statistics / five export types) applied to a multi-file selection, executed in the background behind a dimmed overlay with import and processing progress, cancellable |
-| Interface language | Chinese or English, switchable at the bottom of the sidebar; the program restarts itself to apply the change. Chinese is the default. Exported reports keep Chinese section headings — see section 7. |
+| Export | Processed WAV, fixed-width analysis TXT, image PNG or vector PDF / SVG (paper or screen layout), statistics CSV, standalone HTML report; raw spectrum / peaks / envelope CSV and the spectrogram as NPZ |
+| Batch processing | Step script (repair / denoising tools / crop / envelope / statistics / exports) applied to a multi-file selection, executed in the background behind a dimmed overlay, cancellable; afterwards a comparison table, per-group statistics and a comparison figure |
+| Interface language | Chinese or English, switchable at the bottom of the sidebar; the program restarts itself to apply the change. Chinese is the default. |
+| Report language | Follow the interface, or force Chinese / English for exported TXT, HTML and comparison figures — see section 7. |
+| Denoising tools | Synchronous averaging, zero-phase notch, four adaptive cancellation methods, and an independent noise profile that takes an unaligned, separately recorded noise reference; a diagnostic panel reports ERLE, amplitude change and combined uncertainty, and refuses to apply when the guards fail |
+| Project files | `.wavproj` stores the source path and SHA-256, the recipe of edits (repair / denoise / crop) and the analysis settings; loading replays them and recomputes |
+| In-app manual | The detailed manual opens inside the program and is searchable (`Ctrl`-free: Help group → *Manual…*) |
 
 ---
 
 ## 3. Quick start
 
-1. Launch and click **Open WAV**.
+1. Launch and click **Open audio**.
 2. Drag the blue selection over the steady-state portion of the waveform.
 3. Switch to the **Fourier analysis** tab for fundamental, spectral peaks and THD.
 4. Switch to the **Spectrogram** tab and look for narrow vertical bands — those are transients.
 5. Back on the waveform tab, click **Detect and preview**. The orange trace is the repaired version; **Discard preview** leaves your data untouched, **Apply preview** commits it.
 6. Click **Compute interval statistics** for the full table (the third column defines each quantity). **Show envelope and fit selection** gives you the envelope equation.
 7. Use the playback group to listen to the selection; **Crop to selection** when you only care about one part of the response.
-8. Save results from the export panel: processed WAV, analysis TXT, PNG, CSV, HTML report. **Apply changes to source file…** is only for overwriting the original, and it writes a `.bak-<timestamp>.wav` next to it first.
+8. Save results from the export panel: processed WAV, analysis TXT, PNG / PDF / SVG, CSV, raw data CSV or NPZ, HTML report. **Apply changes to source file…** is only for overwriting the original, and it writes a `.bak-<timestamp>.wav` next to it first.
 
-Full walkthrough and algorithm details are in the manual: [**English** (`docs/manual_en.pdf`, 57 pp.)](docs/manual_en.pdf) · [**中文** (`docs/manual_zh.pdf`, 45 pp.)](docs/manual_zh.pdf).
+Full walkthrough and algorithm details are in the manual: [**English** (`docs/manual_en.pdf`, 66 pp.)](docs/manual_en.pdf) · [**中文** (`docs/manual_zh.pdf`, 56 pp.)](docs/manual_zh.pdf). The same manual opens inside the program.
 
 ---
 
@@ -117,11 +131,19 @@ Full walkthrough and algorithm details are in the manual: [**English** (`docs/ma
 
 **Figures.** In the image export dialog pick *paper single column 3.5 × 2.45 in (600 dpi)* or *paper double column 7.0 × 2.6 in*. Paper layouts are generated at physical size, so dropping them into a two-column Word or LaTeX document needs no rescaling and the type size and line weights stay correct. Ticks point inward, all four spines are drawn, background is white, and the legend sits in a single row below the plot instead of on top of the curves. When single-column output has both envelope and fit enabled, the plot splits into two stacked panels automatically.
 
+**Vector figures.** The image dialog also writes PDF and SVG. Text is converted to outlines by default, so the figure looks the same on a machine without the font; untick that box if you want the text to stay selectable and editable in Illustrator or Inkscape.
+
+**Vector figures.** The image dialog also writes PDF and SVG. Text is converted to outlines by default, so the figure looks the same on a machine without the font; untick that box if you want the text to stay selectable and editable in Illustrator or Inkscape.
+
 **Numbers.** *Export analysis TXT…* produces a plain-text report in seven sections (envelope, Fourier, interval statistics, two-channel, AI notes, repair log, raw coordinates); unchecked sections are skipped and the numbering closes up. The whole file is space-aligned with no tab characters, and every column except the last is ASCII-only, so it stays aligned in any monospace font. The header carries the MD5 of the source WAV, so you can prove which recording a given export came from.
 
 The coordinate section is the longest. Before export choose *fixed points per second*, *decimate by stride*, or *all samples*; if you pick all samples and the output is projected above 5 million lines, the program asks once more.
 
 Reading it back: `pandas.read_csv(path, sep=r"\s+", comment="#")`; Excel uses *Data → Text to Columns → Fixed width*; Origin uses space-delimited and skips `#` lines.
+
+**Raw data.** *Export raw data…* writes the spectrum, the peak/harmonic table and the envelope as tidy CSV (English column names, a `#` metadata header with the window and the analysed span) and the spectrogram as an NPZ matrix, for fitting or plotting in Python.
+
+**Raw data.** *Export raw data…* writes the spectrum, the peak/harmonic table and the envelope as tidy CSV (English column names, a `#` metadata header with the window and the analysed span) and the spectrogram as an NPZ matrix, for fitting or plotting in Python.
 
 ---
 
@@ -129,7 +151,7 @@ Reading it back: `pandas.read_csv(path, sep=r"\s+", comment="#")`; Excel uses *D
 
 One session often produces dozens or hundreds of WAV files. **Batch processing…** is not a one-shot action but a reusable **step script**:
 
-1. **+ Add step** and pick a function from the dropdown — everything the single-file UI can do is there (transient repair, crop, envelope fit, interval statistics, two-channel, export WAV / analysis TXT / PNG / statistics CSV / HTML report).
+1. **+ Add step** and pick a function from the dropdown — everything the single-file UI can do is there (transient repair, denoising tools, crop, envelope fit, interval statistics, two-channel, the exports).
 2. Configure each step's parameters on the right. Options that are meaningless for the current combination are greyed out (e.g. the merged-file name is irrelevant when exporting one TXT per file).
 3. **Select files to process** and multi-select WAVs. This step only records paths — it does not read the files, so selecting hundreds is instant.
 4. Set the output directory (blank = alongside the source files) and click **Start**.
@@ -138,7 +160,13 @@ Three details worth knowing:
 
 - **Excitation frequency can come from the filename.** Set *known excitation frequency* to *frequency in filename* in the statistics step, and `run_1000Hz_r1.wav` yields 1000 Hz. A batch spanning several frequencies needs no per-file editing.
 - **TXT and CSV both merge.** With *merge into one TXT*, each file's full report (with its own source name, path and MD5) is appended in processing order under a single file list header. Merged CSV puts one file per line, ready for Origin.
+- **Crop values can be taken from the waveform.** In a *Crop* step, *Take current selection* fills start and end with the blue selection you drew on the main window, so you can eyeball one file and reuse the interval for the whole batch.
+- **Crop values can be taken from the waveform.** In a *Crop* step, *Take current selection* fills start and end with the blue selection you drew on the main window, so you can eyeball one file and reuse the interval for the whole batch.
 - **It will not freeze.** The main window dims and a card shows *Importing file (m/n): name* and *Processing file (m/n): name* above a total progress bar. **Cancel** stops after the file currently in flight, so you never get a half-written output.
+
+When the run finishes, **View summary** opens the comparison table: one row per file, the columns the step script produced, failed files with their reason, per-group statistics and a comparison figure. Skipped steps are left blank rather than filled with zeros.
+
+When the run finishes, **View summary** opens the comparison table: one row per file, the columns the step script produced, failed files with their reason, per-group statistics and a comparison figure. Skipped steps are left blank rather than filled with zeros.
 
 Scripts save and load as JSON; the last used steps and output directory are remembered across sessions. Source files always stay read-only, and output only goes to the output directory.
 
@@ -183,7 +211,8 @@ Profiles are named and stored, and the currently selected one applies to batch r
    - **Waveform display, image export and spectrogram** are decimated for display only. Peaks and readouts are unchanged, and decimated data never enters any calculation.
    - **Cursor envelope readout** uses a centre-symmetric window, so there is no systematic bias on steady-state signals.
    - **Undo stack** keeps at most 4 levels, about 1.2 GB in total; older entries are dropped first.
-8. **Language scope.** The interface switches fully between Chinese and English. Exported artefacts — the fixed-width TXT report, the CSV key names and the HTML report body — are generated in Chinese regardless of the interface language, because their layout is tuned to fixed-width Chinese columns. Keep one language for a given experiment so a report set stays self-consistent.
+8. **Language scope.** The interface switches fully between Chinese and English. Exported artefacts follow the separate *Report language* switch: keep it on *Follow interface* for a self-consistent set, or force one language when a report has to go to a particular reader. CSV key names stay English either way so scripts do not break.
+9. **Denoising changes amplitudes.** The tool group is deliberately conservative — each method has a guard (holdout ERLE, signal-leak estimate, coherence, training-length ratio) and refuses to touch the data when the guard fails. When it does apply, the signal itself is altered slightly: the diagnostic panel reports the amplitude change and a combined uncertainty, and those numbers belong in the report. An SPL or THD reading taken after denoising is no longer a plain measurement of the original sound.
 
 ---
 
@@ -192,7 +221,7 @@ Profiles are named and stored, and the currently selected one applies to batch r
 ```bash
 pip install -r requirements.txt
 
-pytest -q                     # 155 tests
+pytest -q                     # 285 tests
 pytest tests/test_batch.py    # batch pipeline only
 ```
 
@@ -244,9 +273,15 @@ WAV_Analyzer.spec     PyInstaller build config
 requirements.txt      runtime and test dependencies
 
 core/                 pure computation, no Qt dependency
-  audio_io.py           WAV I/O and quality checks
+  audio_io.py           audio I/O (WAV / FLAC / AIFF) and quality checks
   spectral.py           Fourier analysis, spectral peaks, harmonics, THD
+  launcher.py           console-free relaunch and startup error reporting
   denoise.py            transient detection and repair
+  anc.py                denoising tool group (averaging, notch, four adaptive methods, noise profile)
+  batch_summary.py      batch comparison table, per-group statistics, comparison series
+  data_export.py        raw data CSV and spectrogram NPZ
+  project.py            .wavproj project files
+  report_i18n.py        report language layer
   editing.py            cropping, envelope fitting
   statistics.py         21 interval statistics
   calibration.py        dBFS to dB SPL conversion (sensitivity / gain / two-point)
@@ -264,12 +299,16 @@ app/                  desktop layer (PySide6)
   batch_progress.py     batch progress overlay
   settings_dialog.py    model settings
   calibration_dialog.py acoustic calibration dialog
+  anc_dialog.py         denoising tool group dialog
+  data_export_dialog.py raw data export dialog
+  batch_summary_dialog.py comparison table and figure
+  manual_viewer.py      in-app searchable manual
   workers.py            background threads
 ai/                   AI assistant
   client.py             OpenAI-compatible client
   assistant.py          prompt and tool loop
   tools.py              whitelisted tools
-tests/                automated tests (155)
+tests/                automated tests (285)
 docs/                 manual (manual_en.pdf / manual_zh.pdf + LaTeX source) and screenshot scripts
 demo/                 synthetic demo recording and screenshots; real measurement data is never committed
 ```

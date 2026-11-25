@@ -24,7 +24,14 @@ sys.path.insert(0, str(ROOT))
 from PySide6.QtGui import QColor, QFont, QPalette  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
-OUT = ROOT / "docs" / "figures"
+SHOT_LANG = (os.environ.get("SHOT_LANG") or "zh").strip().lower()
+_IS_EN = SHOT_LANG == "en"
+# 英文手册用 figures_en/，中文手册用 figures/
+OUT = ROOT / "docs" / ("figures_en" if _IS_EN else "figures")
+
+
+def msg(zh: str, en: str) -> str:
+    return en if _IS_EN else zh
 
 
 def light_palette() -> QPalette:
@@ -65,6 +72,11 @@ def main() -> int:
     app.setStyle("Fusion")
     app.setPalette(light_palette())
     app.setFont(QFont("Microsoft YaHei", 9))
+
+    from core.i18n import set_language
+
+    # 必须在 import app.* 之前：界面文案常量在 import 时求值
+    set_language(SHOT_LANG)
 
     from app.image_export_dialog import ImageExportDialog
     from app.txt_export_dialog import TxtExportDialog
