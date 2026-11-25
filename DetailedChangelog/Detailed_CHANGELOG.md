@@ -12,6 +12,34 @@
 
 ---
 
+## 2026-11-27 (upload) — Published 2.0.0 to GitHub
+
+- **Repository**: https://github.com/HanshanSnow/wav-analyzer (existing repo, previously v1.6.1).
+  The 2.0.0 work was placed **on top of** the existing history
+  (`5642d7d` → `95e9051`), not as a new root commit: `git reset --soft origin/main` followed by
+  one commit. Diff against v1.6.1 was verified first: **0 files removed**, 60 added.
+- **Release**: https://github.com/HanshanSnow/wav-analyzer/releases/tag/v2.0.0 — 4 assets:
+  - `WAV_Analyzer_v2.0.0_win64_onedir.zip` (120.8 MB, recommended)
+  - `WAV_Analyzer_v2.0.0_win64_onefile.zip` (119.6 MB)
+  - `WAV_Analyzer_Manual_EN_v2.0.0.pdf` (2.4 MB)
+  - `WAV_Analyzer_Manual_v2.0.0.pdf` (3.3 MB)
+- **Release notes corrected before publishing**: the stored notes still carried the *previous*
+  build's sizes (136.0 / 124.9 MB) and five stale SHA-256 values. Both the Downloads table and
+  the Checksums block were replaced with the measured values of this build
+  (onedir `972d8fbb…`, onefile `ee330e1f…`, exe `819b1606…`). Publishing them unchanged would
+  have shipped wrong checksums.
+- **Environment problems met and worked around**:
+  - `git` with the default schannel backend fails here with
+    `SEC_E_NO_CREDENTIALS (0x8009030e)`, even for public repos → `git config http.sslBackend openssl`.
+  - The first push died with `Recv failure: Connection was reset`; HTTP/1.1 plus a larger
+    `http.postBuffer` made it go through. Later pushes hit the same reset again, so the final
+    one-file notes fix went in through the GitHub **Contents API** (`c14130a`) instead.
+  - `git` refuses the working tree because `D:\WAV_Analyzer` is owned by the pre-reset SID;
+    resolved with `git config --global --add safe.directory` (a git setting — no ACL was changed).
+- **Local state**: branch `main` is level with `origin/main` at `c14130a`.
+
+---
+
 ## 2026-11-27 (final) — Packaging, archival copy, workspace cleanup
 
 - **Release archives** (in `release/`, not uploaded):
